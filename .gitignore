@@ -131,12 +131,15 @@ dmypy.json
 # Python PKL files
 *.pkl
 
-# Datasets
-/data/
-
 # ML Models
 *.hdf5
 
 # Numpy datasets
 *.npz
 *.npy
+
+# Tensorboard logs
+logs/
+
+# Twilio keys
+keys.py
