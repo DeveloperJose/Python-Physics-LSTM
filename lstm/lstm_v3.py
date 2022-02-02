@@ -13,6 +13,7 @@ import sklearn.metrics as metrics
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 # ML libraries
+import keras_tuner as kt
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -28,9 +29,11 @@ import data
 import scaling
 
 #%% Constants
-EXPERIMENT_N = 18
+EXPERIMENT_N = 23
 
 LOOKBACK = 10
+PREDICT_AHEAD = 10
+
 BATCH_SIZE = 5024
 
 USE_2D = False
@@ -41,9 +44,28 @@ OUTPUTS = ['Vu']
 SCALER_PATH = os.path.join('output', f'scaler_{INPUTS}_2D={USE_2D}.pkl')
 SCALER_CREATION_DIRS = ['/home/jperez/data/sled250', '/home/jperez/data/sled255']
 
+#%% Build model from hyperparameters
+def build_model(hp):
+    pass
+
+#%% Build custom tuner
+# More documentation is available here: https://keras.io/guides/keras_tuner/custom_tuner/
+class MyTuner(kt.Tuner):
+    # You can set here any parameters from the fit() function if you want to use them
+    # In our case, we want access to the training set generator (x) so that's the only one I'm including
+    def run_trial(self, trial, x, *fit_args, **fit_kwargs):
+        # Get the tuner hyperparameters from keras-tuner's API
+        hp: kt.HyperParameters = trial.hyperparameters
+
+        # Set some trial hyperparameters
+        x.batch_size = hp.Int('batch_size', 32, 128, step=32, default=64) 
+
+        # Let keras-tuner do the rest of the work
+        super(MyTuner, self).run_trial(trial, x=x, *fit_args, **fit_kwargs)
+
 if __name__ == '__main__':
     #%% Check if we forgot to update the experiment number
-    assert os.path.exists(f'lstm_exp_{EXPERIMENT_N}.png'), 'Experiment number already exists'
+    assert not os.path.exists(f'lstm_exp_{EXPERIMENT_N}.png'), 'Experiment number already exists'
 
     #%% Twilio set-up
     client = Client(keys.account_sid, keys.auth_token)
@@ -78,6 +100,8 @@ if __name__ == '__main__':
         model.add(keras.layers.LSTM(128, return_sequences=True, dropout=0.2))
         model.add(keras.layers.TimeDistributed(keras.layers.Dense(LOOKBACK)))
         model.add(keras.layers.Flatten())
+        model.add(keras.layers.Dense(128, activation='relu'))
+        model.add(keras.layers.Dropout(0.1))
         model.add(keras.layers.Dense(len(OUTPUTS)))
 
         model.compile(
@@ -106,7 +130,7 @@ if __name__ == '__main__':
         epochs=50,
         validation_data=val_generator,
         verbose=1,
-        callbacks=[early_stopping, reduce_lr, checkpoint, tensorboard],
+        callbacks=[early_stopping, checkpoint, tensorboard],
         steps_per_epoch=len(train_generator)
     )
     end_time = timer()

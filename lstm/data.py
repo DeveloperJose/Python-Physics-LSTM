@@ -23,8 +23,11 @@ def read_np(filename, inputs_str, outputs_str, use_2D=False, scaler=None):
     Y = arr[:, output_idxs]
 
     # Convert pressure from Pa to Atm
-    p_idx = inputs_str.index('P')
-    X[:, p_idx] = X[:, p_idx] / 101325
+    try:
+        p_idx = inputs_str.index('P')
+        X[:, p_idx] = X[:, p_idx] / 101325
+    except ValueError:
+        pass
 
     if scaler:
         X = scaler.transform(X)
@@ -53,6 +56,8 @@ class SledDataGenerator(keras.utils.Sequence):
         self.start = start
         self.end = end
         self.step = step
+
+        self.sciann = False
 
         # Check if we have a serialized version of the data, if not, generate it
         data_path = os.path.join(
@@ -102,7 +107,10 @@ class SledDataGenerator(keras.utils.Sequence):
         batch_x = []
         batch_y = []
         for (timestep, row) in batch_pairs:
-            if self.use_2D:
+            if self.sciann:
+                X = np.append(self.x_data[timestep, row], timestep)
+                Y = np.append(self.y_data[timestep, row], [0, 0, 0, 0])
+            elif self.use_2D:
                 X = self.x_data[timestep-self.lookback:timestep, :, :]
                 Y = self.y_data[timestep, :, :]
             else:
@@ -112,6 +120,8 @@ class SledDataGenerator(keras.utils.Sequence):
             batch_x.append(X)
             batch_y.append(Y)
 
+        if self.sciann:
+            return np.array(batch_x), np.array(batch_y), np.zeros((self.batch_size, 1))
         return np.array(batch_x), np.array(batch_y)
 
     def on_epoch_end(self):

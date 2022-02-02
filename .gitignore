@@ -143,3 +143,6 @@ logs/
 
 # Twilio keys
 keys.py
+
+# Personal logs
+experiments.txt
