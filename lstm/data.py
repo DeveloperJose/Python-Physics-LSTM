@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
 from tensorflow import keras
@@ -9,8 +9,8 @@ from sklearn.preprocessing import StandardScaler
 
 WIDTH = 197
 HEIGHT = 72
-COLUMNS_H = ['X', 'Y', 'P', 'Vu', 'Vv', 'W.VF']
-COLUMNS_RAW = ['X [ m ]', 'Y [ m ]', 'Pressure [ Pa ]',
+COLUMNS_H = ['X', 'Y', 'T', 'P', 'Vu', 'Vv', 'W.VF']
+COLUMNS_RAW = ['X [ m ]', 'Y [ m ]', 'Timestep', 'Pressure [ Pa ]',
                'Velocity u [ m s^-1 ]', 'Velocity v [ m s^-1 ]', 'Water.Volume Fraction']
 
 
@@ -41,22 +41,28 @@ def read_np(filename, inputs_str, outputs_str, use_2D=False, scaler=None):
 
 # Inspired from https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly
 class SledDataGenerator(keras.utils.Sequence):
-    def __init__(self, data_dir: str, batch_size: int, lookback: int, shuffle: bool, use_2D: bool, inputs: List[str], outputs: List[str], scaler: StandardScaler, start: int, end: int, step: int = 1):
+    def __init__(self, data_dir: str, batch_size: int, lookback: int, predict_ahead: int, neighbor_size: int, shuffle: bool, use_2D: bool, inputs: List[str], outputs: List[str], scaler: StandardScaler, start: int, end: int, step: int = 1):
         print(
             f'Loading dataset {data_dir} from t={start} to t={end} with 2D={use_2D}')
 
         self.data_dir = Path(data_dir)
         self.batch_size = batch_size
         self.lookback = lookback
+        self.predict_ahead = predict_ahead
+        self.neighbor_size = neighbor_size
+
         self.shuffle = shuffle
         self.use_2D = use_2D
+
         self.inputs = inputs
         self.outputs = outputs
         self.scaler = scaler
+
         self.start = start
         self.end = end
         self.step = step
 
+        # Hidden states
         self.sciann = False
 
         # Check if we have a serialized version of the data, if not, generate it
@@ -91,8 +97,7 @@ class SledDataGenerator(keras.utils.Sequence):
         # Generate a list of the valid timesteps for batches
         self.list_timesteps = np.arange(lookback, self.n_timesteps)
         self.list_rows = np.arange(self.x_data.shape[1])
-        self.list_IDs = [(t, r)
-                         for t in self.list_timesteps for r in self.list_rows]
+        self.list_IDs = [(t, r) for t in self.list_timesteps for r in self.list_rows]
 
         self.on_epoch_end()
 
@@ -107,22 +112,23 @@ class SledDataGenerator(keras.utils.Sequence):
         batch_x = []
         batch_y = []
         for (timestep, row) in batch_pairs:
+            # Y = self.y_data[timestep:timestep+(self.predict_ahead), row]
+            X = self.x_data[timestep-self.lookback:timestep, row]
+            Y = self.y_data[timestep, row]
+
             if self.sciann:
-                X = np.append(self.x_data[timestep, row], timestep)
-                Y = np.append(self.y_data[timestep, row], [0, 0, 0, 0])
-            elif self.use_2D:
-                X = self.x_data[timestep-self.lookback:timestep, :, :]
-                Y = self.y_data[timestep, :, :]
-            else:
-                X = self.x_data[timestep-self.lookback:timestep, row]
-                Y = self.y_data[timestep, row]
+                Y = np.append(Y, [0, 0])
+
+            # if self.neighbor_size > 1:
+            #     # Look for the closest neighboring rows
+            #     neighbor_rows = []
 
             batch_x.append(X)
             batch_y.append(Y)
-
-        if self.sciann:
-            return np.array(batch_x), np.array(batch_y), np.zeros((self.batch_size, 1))
-        return np.array(batch_x), np.array(batch_y)
+        batch_x = np.array(batch_x)
+        batch_y = np.array(batch_y)
+        # print(f'Batch X = {batch_x.shape} | Batch Y = {batch_y.shape}')
+        return batch_x, batch_y
 
     def on_epoch_end(self):
         self.indexes = np.arange(len(self.list_IDs))

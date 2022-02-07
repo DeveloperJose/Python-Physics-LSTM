@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from sklearn import neighbors
 import sklearn.metrics as metrics
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
@@ -29,20 +30,25 @@ import data
 import scaling
 
 #%% Constants
-EXPERIMENT_N = 23
+EXPERIMENT_N = 29
 
 LOOKBACK = 10
-PREDICT_AHEAD = 10
+PREDICT_AHEAD = 1
+NEIGHBOR_SIZE = 1
 
 BATCH_SIZE = 5024
 
 USE_2D = False
 
-INPUTS = ['X', 'Y', 'P', 'Vu', 'W.VF']
+# INPUTS = ['X', 'Y', 'P', 'Vu', 'Vv', 'W.VF']
+INPUTS = ['X', 'Y']
 OUTPUTS = ['Vu']
 
 SCALER_PATH = os.path.join('output', f'scaler_{INPUTS}_2D={USE_2D}.pkl')
 SCALER_CREATION_DIRS = ['/home/jperez/data/sled250', '/home/jperez/data/sled255']
+
+# No more scientific notation
+np.set_printoptions(suppress=True, linewidth=np.inf)
 
 #%% Build model from hyperparameters
 def build_model(hp):
@@ -74,9 +80,26 @@ if __name__ == '__main__':
     sc = scaling.load_or_create(SCALER_PATH, SCALER_CREATION_DIRS, INPUTS, OUTPUTS, USE_2D)
 
     #%% Data Loaders
-    train_generator = data.SledDataGenerator('/home/jperez/data/sled250', batch_size=BATCH_SIZE, lookback=LOOKBACK, shuffle=True, use_2D=USE_2D, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, start=1, end=638+1)
-    val_generator = data.SledDataGenerator('/home/jperez/data/sled255', batch_size=BATCH_SIZE, lookback=LOOKBACK, shuffle=True, use_2D=USE_2D, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, start=19, end=760+1)
+    # train_generator = data.SledDataGenerator('/home/jperez/data/sled250', batch_size=BATCH_SIZE, lookback=LOOKBACK, 
+    #                       shuffle=True, use_2D=USE_2D, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, start=1, end=638+1)
+    # val_generator = data.SledDataGenerator('/home/jperez/data/sled255', batch_size=BATCH_SIZE, lookback=LOOKBACK, shuffle=True, use_2D=USE_2D, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, start=19, end=760+1)
 
+    train_generator = data.SledDataGenerator('/home/jperez/data/sled250', batch_size=BATCH_SIZE, lookback=LOOKBACK, predict_ahead=PREDICT_AHEAD, neighbor_size=NEIGHBOR_SIZE, shuffle=True, use_2D=USE_2D, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, 
+                                            start=1, end=510+1)
+
+    train_generator.sciann = True
+
+    val_generator = data.SledDataGenerator('/home/jperez/data/sled250', batch_size=BATCH_SIZE, lookback=LOOKBACK, predict_ahead=PREDICT_AHEAD, neighbor_size=NEIGHBOR_SIZE, shuffle=True, use_2D=USE_2D, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, 
+                                            start=510, end=638+1)
+
+    class Physics(keras.layers.Layer):
+        def __init__(self):
+            super(Physics, self).__init__()
+
+        def call(self, inputs):
+            print(inputs)
+            # self.add_loss(keras.losses.mean_squared_error)
+            return inputs
     #%% Model
     print('Preparing model')
     if USE_2D:
@@ -96,12 +119,17 @@ if __name__ == '__main__':
         # https://machinelearningmastery.com/timedistributed-layer-for-long-short-term-memory-networks-in-python/
         model = keras.Sequential()
 
-        model.add(keras.layers.LSTM(256, input_shape=(LOOKBACK, len(INPUTS)), return_sequences=True, dropout=0.2))
-        model.add(keras.layers.LSTM(128, return_sequences=True, dropout=0.2))
+        model.add(keras.layers.InputLayer(input_shape=(LOOKBACK, len(INPUTS))))
+        model.add(Physics())
+        model.add(keras.layers.LSTM(256, return_sequences=True))
+        model.add(keras.layers.LSTM(128, return_sequences=True))
+        # model.add(keras.layers.Dense(128, activation='relu'))
+        # model.add(keras.layers.Dropout(0.1))
+        # model.add(keras.layers.RepeatVector(PREDICT_AHEAD))
+        # model.add(keras.layers.Reshape((PREDICT_AHEAD, len(INPUTS), 1, 64)))
         model.add(keras.layers.TimeDistributed(keras.layers.Dense(LOOKBACK)))
         model.add(keras.layers.Flatten())
-        model.add(keras.layers.Dense(128, activation='relu'))
-        model.add(keras.layers.Dropout(0.1))
+        # model.add(keras.layers.TimeDistributed(keras.layers.Dense(1)))
         model.add(keras.layers.Dense(len(OUTPUTS)))
 
         model.compile(

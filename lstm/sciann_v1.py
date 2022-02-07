@@ -9,12 +9,12 @@ import numpy as np
 import scaling
 import data
 
-x = sn.Variable('x', dtype='float64')
-y = sn.Variable('y', dtype='float64')
-t = sn.Variable('z', dtype='float64')
+x = sn.RNNVariable('x', dtype='float64')
+y = sn.RNNVariable('y', dtype='float64')
+t = sn.RNNVariable('z', dtype='float64')
 
-P = sn.Functional("P", [x, y, t], 8*[20], 'tanh')
-Psi = sn.Functional("Psi", [x, y, t], 8*[20], 'tanh')
+P = sn.RNNFunctional("P", [x, y, t], 8*[20], 'tanh')
+Psi = sn.RNNFunctional("Psi", [x, y, t], 8*[20], 'tanh')
 
 lambda1 = sn.Parameter(np.random.rand(), inputs=[x,y,t], name="lambda1")
 lambda2 = sn.Parameter(np.random.rand(), inputs=[x,y,t], name="lambda2")
