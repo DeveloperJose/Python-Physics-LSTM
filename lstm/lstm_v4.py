@@ -39,17 +39,18 @@ import data
 import scaling
 
 # %% Constants
-EXPERIMENT_N = 29
+EXPERIMENT_N = 33
 
 LOOKBACK = 10
 PREDICT_AHEAD = 1
 NEIGHBOR_SIZE = 1
 
-BATCH_SIZE = 5024
+BATCH_SIZE = 5024*8
 
 USE_2D = False
 
 INPUTS = ['X', 'Y', 'T', 'Vu', 'Vv', 'P', 'W.VF']
+# OUTPUTS = ['Vu', 'Vv']
 OUTPUTS = ['Vu', 'Vv']
 
 SCALER_PATH = os.path.join('output', f'scaler_{INPUTS}_2D={USE_2D}.pkl')
@@ -59,15 +60,11 @@ SCALER_CREATION_DIRS = ['/home/jperez/data/sled250', '/home/jperez/data/sled255'
 np.set_printoptions(suppress=True, linewidth=np.inf)
 
 # %% Build model from hyperparameters
-
-
 def build_model(hp):
     pass
 
 # %% Build custom tuner
 # More documentation is available here: https://keras.io/guides/keras_tuner/custom_tuner/
-
-
 class MyTuner(kt.Tuner):
     # You can set here any parameters from the fit() function if you want to use them
     # In our case, we want access to the training set generator (x) so that's the only one I'm including
@@ -105,182 +102,6 @@ if __name__ == '__main__':
                                            start=510, end=638+1)
 
     val_generator.sciann = True
-
-    # def custom_loss(input_tensor: tf.Tensor, output_tensor: tf.Tensor):
-    #     def loss(y_true, y_pred):
-    #         psi = output_tensor[0][:, 0:1]
-    #         p = output_tensor[0][:, 1:2]
-    #         # import pdb
-    #         # pdb.set_trace()
-    #         # x = input_tensor[:, 0]
-    #         # y = input_tensor[:, 1]
-    #         # t = input_tensor[:, 2]
-
-    #         # psi = output_tensor[:, 0]
-    #         # p = output_tensor[:, 1]
-
-    #         # u = K.gradients(psi, y)[0]
-    #         # v = -K.gradients(psi, x)[0]
-    #         # print('grads', grads, grads.shape)
-    #         return K.square()
-    #     return loss
-
-    # class GradientLayer(keras.layers.Layer):
-    #     def __init__(self, model, **kwargs):
-    #         super().__init__(**kwargs)
-    #         self.model = model
-
-    #     def call(self, xyt):
-    #         print('******************* CALL')
-    #         x, y, t = [ xyt[..., i, tf.newaxis] for i in range(xyt.shape[-1]) ]
-    #         with tf.GradientTape(persistent=True) as t3:
-    #             t3.watch([x, y, t])
-    #             with tf.GradientTape(persistent=True) as t2:
-    #                 t2.watch([x, y, t])
-    #                 with tf.GradientTape(persistent=True) as t1:
-    #                     t1.watch([x, y, t])
-    #                     # Pass input to LSTM model
-    #                     psi_p = self.model(tf.concat([x, y, t], axis=-1))
-    #                     # Get outputs from LSTM model
-    #                     psi = psi_p[..., 0, tf.newaxis]
-    #                     p   = psi_p[..., 1, tf.newaxis]
-
-    #                 # Gradient of [PSI,P] w.r.t inputs [X,Y]
-    #                 # Only use the "current timestep" for X/Y
-    #                 # v = t1.batch_jacobian(psi, x[:, -1])
-    #                 # u = t1.batch_jacobian(psi, y[:, -1])
-
-    #                 # p_x = t1.batch_jacobian(p, x[:, -1])
-
-    #                 # p_y = t1.batch_jacobian(p, y[:, -1])
-    #                 v = -tf.reshape(t1.batch_jacobian(psi, x[:, -1]), [-1, 1])
-    #                 u = tf.reshape(t1.batch_jacobian(psi, y[:, -1]), [-1, 1])
-
-    #                 p_x = tf.reshape(t1.batch_jacobian(p, x[:, -1]), [-1, 1])
-    #                 p_y = tf.reshape(t1.batch_jacobian(p, y[:, -1]), [-1, 1])
-
-    #             # Gradients of [U,V] w.r.t inputs [X,Y,T]
-    #             # u_x = t2.batch_jacobian(u, x[:, -1])
-    #             # u_y = t2.batch_jacobian(u, y[:, -1])
-    #             # u_t = t2.batch_jacobian(u, t[:, -1])
-
-    #             # v_x = t2.batch_jacobian(v, x[:, -1])
-    #             # v_y = t2.batch_jacobian(v, y[:, -1])
-    #             # v_t = t2.batch_jacobian(v, t[:, -1])
-    #             u_x = tf.reshape(t2.batch_jacobian(u, x[:, -1]), [-1, 1])
-    #             u_y = tf.reshape(t2.batch_jacobian(u, y[:, -1]), [-1, 1])
-    #             u_t = tf.reshape(t2.batch_jacobian(u, t[:, -1]), [-1, 1])
-
-    #             v_x = tf.reshape(t2.batch_jacobian(v, x[:, -1]), [-1, 1])
-    #             v_y = tf.reshape(t2.batch_jacobian(v, y[:, -1]), [-1, 1])
-    #             v_t = tf.reshape(t2.batch_jacobian(v, t[:, -1]), [-1, 1])
-
-    #         # Gradients of [U_X, U_Y, V_X, V_Y] w.r.t inputs [X,Y]
-    #         # u_xx = t3.batch_jacobian(u_x, x[:, -1])
-    #         # u_yy = t3.batch_jacobian(u_y, y[:, -1])
-
-    #         # v_xx = t3.batch_jacobian(v_x, x[:, -1])
-    #         # v_yy = t3.batch_jacobian(v_y, y[:, -1])
-    #         u_xx = tf.reshape(t3.batch_jacobian(u_x, x[:, -1]), [-1, 1])
-    #         u_yy = tf.reshape(t3.batch_jacobian(u_y, y[:, -1]), [-1, 1])
-
-    #         v_xx = tf.reshape(t3.batch_jacobian(v_x, x[:, -1]), [-1, 1])
-    #         v_yy = tf.reshape(t3.batch_jacobian(v_y, y[:, -1]), [-1, 1])
-
-    #         # Clean-up tapes
-    #         del t1, t2, t3
-
-    #         p_grads = p, p_x, p_y
-    #         u_grads = u, u_x, u_y, u_t, u_xx, u_yy
-    #         v_grads = v, v_x, v_y, v_t, v_xx, v_yy
-
-    #         lambda1 = 0.999
-    #         lambda2 = 0.01
-    #         f_u = u_t + lambda1*(u*u_x + v*u_y) + p_x - lambda2*(u_xx + u_yy)
-    #         f_v = v_t + lambda1*(u*v_x + v*v_y) + p_y - lambda2*(v_xx + v_yy)
-
-    #         # return tf.concat([u, v, f_u, f_v])
-
-    def lambda_test(tensor):
-        xyt = tensor[0]
-        psi_p = tensor[1]
-
-        x, y, t = [xyt[..., i, tf.newaxis] for i in range(xyt.shape[-1])]
-        psi = psi_p[..., 0, tf.newaxis]
-        p = psi_p[..., 1, tf.newaxis]
-        pdb.set_trace()
-        with tf.GradientTape(persistent=True) as t3:
-            t3.watch([x, y, t, psi, p])
-            with tf.GradientTape(persistent=True) as t2:
-                t2.watch([x, y, t, psi, p])
-                with tf.GradientTape(persistent=True) as t1:
-                    t1.watch([x, y, t, psi, p])
-                    # Pass input to LSTM model
-                    # psi_p = self.model(tf.concat([x, y, t], axis=-1))
-                    # Get outputs from LSTM model
-                    pdb.set_trace()
-
-                # Gradient of [PSI,P] w.r.t inputs [X,Y]
-                # Only use the "current timestep" for X/Y
-                # v = t1.batch_jacobian(psi, x[:, -1])
-                # u = t1.batch_jacobian(psi, y[:, -1])
-
-                # p_x = t1.batch_jacobian(p, x[:, -1])
-
-                # p_y = t1.batch_jacobian(p, y[:, -1])
-                v = -tf.reshape(t1.batch_jacobian(psi, x[:, -1]), [-1, 1])
-                # u = tf.reshape(t1.batch_jacobian(psi, y[:, -1]), [-1, 1])
-                u = t1.gradient(psi, y)
-                pdb.set_trace()
-
-                # p_x = tf.reshape(t1.batch_jacobian(p, x[:, -1]), [-1, 1])
-                # p_y = tf.reshape(t1.batch_jacobian(p, y[:, -1]), [-1, 1])
-
-            # Gradients of [U,V] w.r.t inputs [X,Y,T]
-            # u_x = t2.batch_jacobian(u, x[:, -1])
-            # u_y = t2.batch_jacobian(u, y[:, -1])
-            # u_t = t2.batch_jacobian(u, t[:, -1])
-
-            # v_x = t2.batch_jacobian(v, x[:, -1])
-            # v_y = t2.batch_jacobian(v, y[:, -1])
-            # v_t = t2.batch_jacobian(v, t[:, -1])
-
-            # u_x = tf.reshape(t2.batch_jacobian(u, x[:, -1]), [-1, 1])
-            # u_y = tf.reshape(t2.batch_jacobian(u, y[:, -1]), [-1, 1])
-            # u_t = tf.reshape(t2.batch_jacobian(u, t[:, -1]), [-1, 1])
-
-            # v_x = tf.reshape(t2.batch_jacobian(v, x[:, -1]), [-1, 1])
-            # v_y = tf.reshape(t2.batch_jacobian(v, y[:, -1]), [-1, 1])
-            # v_t = tf.reshape(t2.batch_jacobian(v, t[:, -1]), [-1, 1])
-
-        # Gradients of [U_X, U_Y, V_X, V_Y] w.r.t inputs [X,Y]
-        # u_xx = t3.batch_jacobian(u_x, x[:, -1])
-        # u_yy = t3.batch_jacobian(u_y, y[:, -1])
-
-        # v_xx = t3.batch_jacobian(v_x, x[:, -1])
-        # v_yy = t3.batch_jacobian(v_y, y[:, -1])
-
-        # u_xx = tf.reshape(t3.batch_jacobian(u_x, x[:, -1]), [-1, 1])
-        # u_yy = tf.reshape(t3.batch_jacobian(u_y, y[:, -1]), [-1, 1])
-
-        # v_xx = tf.reshape(t3.batch_jacobian(v_x, x[:, -1]), [-1, 1])
-        # v_yy = tf.reshape(t3.batch_jacobian(v_y, y[:, -1]), [-1, 1])
-
-        # Clean-up tapes
-        del t1, t2, t3
-
-        # p_grads = p, p_x, p_y
-        # u_grads = u, u_x, u_y, u_t, u_xx, u_yy
-        # v_grads = v, v_x, v_y, v_t, v_xx, v_yy
-
-        # lambda1 = 0.999
-        # lambda2 = 0.01
-        # f_u = u_t + lambda1*(u*u_x + v*u_y) + p_x - lambda2*(u_xx + u_yy)
-        # f_v = v_t + lambda1*(u*v_x + v*v_y) + p_y - lambda2*(v_xx + v_yy)
-
-        # return tf.concat([u, v, f_u, f_v], axis=1)
-        print('Call = ', u)
-        return u
 
     def lambda_d1(tensor):
         xyt = tensor[0]
@@ -357,145 +178,67 @@ if __name__ == '__main__':
         f_u = u_t + l1*(u*u_x + v*u_y) + p_x - l2*(u_xx + u_yy)
         f_v = v_t + l1*(u*v_x + v*v_y) + p_y - l2*(v_xx + v_yy)
 
-        return tf.stack([0.5*lstm_u + 0.5*u, 0.5*lstm_v+0.5*v, f_u, f_v], axis=1)
+        lstm_w = 0.8
+        pinns_w = 1 - lstm_w
+
+        return tf.stack([lstm_w*lstm_u + pinns_w*u, lstm_w*lstm_v+pinns_w*v, f_u, f_v], axis=1)
+    
     # %% Model
-    print('Initializing')
-    # https://machinelearningmastery.com/timedistributed-layer-for-long-short-term-memory-networks-in-python/
-
-    # input_tensor = layers.Input(shape=(LOOKBACK, len(INPUTS)))
-    # lstm1 = layers.LSTM(256, return_sequences=True)(input_tensor)
-    # lstm2 = layers.LSTM(128, return_sequences=True)(lstm1)
-    # td = layers.TimeDistributed(keras.layers.Dense(LOOKBACK))(lstm2)
-    # f = layers.Flatten()(td)
-    # output_tensor = layers.Dense(2)(f)
-
-    # model = keras.Model(input_tensor, output_tensor)
-
-    print('Preparing LSTM')
+    print('Preparing Model')
     input_layer = keras.layers.Input(shape=(LOOKBACK, len(INPUTS)))
 
+    # Dense Branch
+    # For input, take the current timestep and X,Y,T (recall layer[Batch_Size, Timestep, Input])
+    # prev_dense = input_layer[:, -1, :3]
+    dense1 = keras.layers.Dense(20)(input_layer[:, -1, :3])
+    dense2 = keras.layers.Dense(20)(dense1)
+    dense_output = keras.layers.Dense(2, name='Dense_Output')(dense2)
+
+    # LSTM Branch
     lstm1 = keras.layers.LSTM(256, return_sequences=True)(input_layer)
     lstm2 = keras.layers.LSTM(128, return_sequences=True)(lstm1)
     lstm_td = keras.layers.TimeDistributed(keras.layers.Dense(LOOKBACK))(lstm2)
     lstm_flat = keras.layers.Flatten()(lstm_td)
     lstm_output = keras.layers.Dense(len(OUTPUTS), name='LSTM_Output')(lstm_flat)
 
-    dense1 = keras.layers.Dense(20)(input_layer)
-    dense2 = keras.layers.Dense(20)(dense1)
-    dense_output = keras.layers.Dense(2, name='Dense_Output')(dense2)
-
+    # Dense Lambdas
     pinns1 = keras.layers.Lambda(lambda_d1)([input_layer, dense_output])
     pinns2 = keras.layers.Lambda(lambda_d2)([input_layer, pinns1])
     pinns3 = keras.layers.Lambda(lambda_d3)([input_layer, pinns2])
-    pinn_output = keras.layers.Lambda(lambda_output)([pinns1, pinns2, pinns3, lstm_output])
-    lstm_model = keras.Model(input_layer, pinn_output)
+
+    # PINNs/Combination Lambda
+    pinns_output = keras.layers.Lambda(lambda_output)([pinns1, pinns2, pinns3, lstm_output])
+    lstm_model = keras.Model(input_layer, pinns_output)
+    lstm_model.compile(optimizer=keras.optimizers.Adam(), loss=keras.losses.MeanSquaredError(reduction=losses.Reduction.AUTO))
     lstm_model.summary()
 
     keras.utils.plot_model(lstm_model, to_file='model.png', show_shapes=True)
 
-    # Physics-Informed Part
-    # print('Preparing GradientLayer')
-    # grads = GradientLayer(lstm_model)
+    #%% Model checkpoints
+    print('Preparing checkpoints')
+    early_stopping = keras.callbacks.EarlyStopping(monitor="val_loss", patience=5)
+    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=3)
+    checkpoint = keras.callbacks.ModelCheckpoint(f'LSTM_v3_exp{EXPERIMENT_N}.hdf5',
+                                                verbose=1,
+                                                monitor='val_loss',
+                                                save_best_only=True,
+                                                mode='auto')
+    tensorboard = keras.callbacks.TensorBoard(log_dir=f'logs/lstm_exp{EXPERIMENT_N}')
 
-    # print('Preparing Physics-Informed Model')
-    # # input_layer2 = keras.layers.Input(shape=(1, len(INPUTS)))
-
-    # print('Calling grads')
-
-    # psi_grads, p_grads, u_grads, v_grads = grads(input_layer)
-    # p, p_x, p_y = p_grads
-    # u, u_x, u_y, u_t, u_xx, u_yy = u_grads
-    # v, v_x, v_y, v_t, v_xx, v_yy = v_grads
-
-    # print('Setting up outputs')
-    # f_u = u_t + lambda1*(u*u_x + v*u_y) + p_x - lambda2*(u_xx + u_yy)
-    # f_v = v_t + lambda1*(u*v_x + v*v_y) + p_y - lambda2*(v_xx + v_yy)
-    # pinn_model = keras.Model(input_layer, outputs=tf.concat([u, v, f_u, f_v], axis=1))
-
-    # %% Training
-    print('Compiling model')
-    opt = keras.optimizers.Adam()
-    loss_fn = keras.losses.MeanSquaredError()
-    # train_metric = keras.metrics.MeanSquaredError()
-    # val_metric = keras.metrics.MeanSquaredError()
-    lstm_model.compile(optimizer=opt, loss=loss_fn)
-
-    print('Training model')
-    # model.compile(loss=custom_loss(model.inputs, model.outputs), optimizer=opt, experimental_run_tf_function=False)
-    # lstm_model.summary()
-
+    #%% Model training
+    start_time = timer()
+    print('Fitting model')
     history = lstm_model.fit(
         x=train_generator,
         epochs=1,
         validation_data=val_generator,
         verbose=1,
-        # callbacks=[early_stopping, checkpoint, tensorboard],
+        callbacks=[early_stopping, checkpoint, tensorboard],
         steps_per_epoch=len(train_generator)
     )
-    # for epoch in range(1):
-    #     # Train
-    #     start_time = timer()
-    #     with tqdm(total=len(train_generator), desc=f'Epoch {epoch}') as pbar:
-    #         for batch_x, batch_y in train_generator:
-    #             with tf.GradientTape(persistent=True) as tape:
-    #                 pred = model(batch_x, training=True)
-    #                 psi = pred[:, 0]
-    #                 p = pred[:, 1]
-    #                 # loss_val = loss_fn(batch_y, pred)
-
-    #             # grads = tape.gradient(loss_val, model.trainable_variables)
-    #             import pdb
-    #             pdb.set_trace()
-    #             opt.apply_gradients(zip(grads, model.trainable_variables))
-    #             train_metric.update_state(batch_y, pred)
-    #             pbar.update()
-    #             pbar.postfix = f'Train MSE: {train_metric.result()}'
-
-    #     epoch_duration = timer() - start_time
-
-    #     # Val
-    #     start_time = timer()
-    #     for batch_x, batch_y in tqdm(val_generator, desc='Validation'):
-    #         pred = model(batch_x, training=False)
-    #         val_metric.update_state(batch_y, pred)
-
-    #     val_duration = timer() - start_time
-
-    #     # Stats
-    #     print(f'Epoch {epoch} took {epoch_duration:.3f}sec = {epoch_duration/60:.3f}min = {epoch_duration/60/60:.3f}h | Validation took {val_duration:.3f}sec | Train MSE={train_metric.result()} | Validation MSE={val_metric.result()}')
-
-    #     train_generator.on_epoch_end()
-    #     val_generator.on_epoch_end()
-    #     train_metric.reset_states()
-    #     val_metric.reset_states()
-
-    # model.summary()
-
-    # #%% Model checkpoints
-    # print('Preparing checkpoints')
-    # early_stopping = keras.callbacks.EarlyStopping(monitor="val_loss", patience=5)
-    # reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=3)
-    # checkpoint = keras.callbacks.ModelCheckpoint(f'LSTM_v3_exp{EXPERIMENT_N}.hdf5',
-    #                                             verbose=1,
-    #                                             monitor='val_loss',
-    #                                             save_best_only=True,
-    #                                             mode='auto')
-    # tensorboard = keras.callbacks.TensorBoard(log_dir=f'logs/lstm_exp{EXPERIMENT_N}')
-
-    # #%% Model training
-    # start_time = timer()
-    # print('Fitting model')
-    # history = model.fit(
-    #     x=train_generator,
-    #     epochs=50,
-    #     validation_data=val_generator,
-    #     verbose=1,
-    #     callbacks=[early_stopping, checkpoint, tensorboard],
-    #     steps_per_epoch=len(train_generator)
-    # )
-    # end_time = timer()
-    # duration = end_time-start_time
-    # print(f'Fitting took {duration:.3f}sec = {duration/60:.3f}min = {duration/60/60:.3f}h')
+    end_time = timer()
+    duration = end_time-start_time
+    print(f'Fitting took {duration:.3f}sec = {duration/60:.3f}min = {duration/60/60:.3f}h')
 
     # #%% Model evaluation
     # loss = history.history['loss']
@@ -507,11 +250,25 @@ if __name__ == '__main__':
     # ax.set_title('Loss (Mean Squared Logarithmic Error)')
     # ax.legend(loc='upper right')
 
+    # #%% Individual MSEs
+    # from sklearn.metrics import mean_squared_error
+    # y_true = []
+    # y_pred = []
+    # with tqdm(total=len(val_generator), desc='Computing MSEs') as p_bar:
+    #     for batch_x, batch_y in val_generator:
+    #         pred = lstm_model.predict(batch_x)
+    #         y_pred.extend(pred)
+    #         y_true.extend(batch_y)
+    #         p_bar.update()
+    #         # p_bar.postfix = f'MSE: {mean_squared_error(y_true, y_pred, multioutput="raw_values")}'
+
+    # print('Final', mean_squared_error(y_true, y_pred, multioutput='raw_values'))
+            
     # plt.savefig(f'lstm_exp_{EXPERIMENT_N}.png')
 
-    # Send a text message via Twilio
-    client.messages.create(
-        body=f'Model {EXPERIMENT_N} has completed',
-        from_=keys.src_phone,
-        to=keys.dst_phone
-    )
+    # #%% Send a text message via Twilio
+    # client.messages.create(
+    #     body=f'Model {EXPERIMENT_N} has completed with MSES {mean_squared_error(y_true, y_pred, multioutput="raw_values")}',
+    #     from_=keys.src_phone,
+    #     to=keys.dst_phone
+    # )

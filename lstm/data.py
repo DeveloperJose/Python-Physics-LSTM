@@ -117,7 +117,7 @@ class SledDataGenerator(keras.utils.Sequence):
             Y = self.y_data[timestep, row]
 
             if self.sciann:
-                Y = np.append(Y, [0, 0])
+                Y = np.append(Y, [0.0, 0.0])
 
             # if self.neighbor_size > 1:
             #     # Look for the closest neighboring rows
