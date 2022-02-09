@@ -1,8 +1,6 @@
 # Python native libraries
 import os
 import itertools
-from pickletools import uint2
-from unicodedata import ucd_3_2_0
 import joblib
 from timeit import default_timer as timer
 from pathlib import Path
@@ -39,7 +37,7 @@ import data
 import scaling
 
 # %% Constants
-EXPERIMENT_N = 33
+EXPERIMENT_N = 35
 
 LOOKBACK = 10
 PREDICT_AHEAD = 1
@@ -50,7 +48,6 @@ BATCH_SIZE = 5024*8
 USE_2D = False
 
 INPUTS = ['X', 'Y', 'T', 'Vu', 'Vv', 'P', 'W.VF']
-# OUTPUTS = ['Vu', 'Vv']
 OUTPUTS = ['Vu', 'Vv']
 
 SCALER_PATH = os.path.join('output', f'scaler_{INPUTS}_2D={USE_2D}.pkl')
@@ -58,26 +55,6 @@ SCALER_CREATION_DIRS = ['/home/jperez/data/sled250', '/home/jperez/data/sled255'
 
 # No more scientific notation
 np.set_printoptions(suppress=True, linewidth=np.inf)
-
-# %% Build model from hyperparameters
-def build_model(hp):
-    pass
-
-# %% Build custom tuner
-# More documentation is available here: https://keras.io/guides/keras_tuner/custom_tuner/
-class MyTuner(kt.Tuner):
-    # You can set here any parameters from the fit() function if you want to use them
-    # In our case, we want access to the training set generator (x) so that's the only one I'm including
-    def run_trial(self, trial, x, *fit_args, **fit_kwargs):
-        # Get the tuner hyperparameters from keras-tuner's API
-        hp: kt.HyperParameters = trial.hyperparameters
-
-        # Set some trial hyperparameters
-        x.batch_size = hp.Int('batch_size', 32, 128, step=32, default=64)
-
-        # Let keras-tuner do the rest of the work
-        super(MyTuner, self).run_trial(trial, x=x, *fit_args, **fit_kwargs)
-
 
 if __name__ == '__main__':
     # %% Check if we forgot to update the experiment number
@@ -113,15 +90,15 @@ if __name__ == '__main__':
         psi_grad = K.gradients(psi, xyt)
         p_grad = K.gradients(p, xyt)
         if len(psi_grad) > 0 and psi_grad[0] != None:
-            # [Batch, Lookback, Input]
+            # [Batch, Lookback, Input (X, Y, T, ...)]
             v = -psi_grad[0][:, -1, 0]
             u = psi_grad[0][:, -1, 1]
 
             p_x = p_grad[0][:, -1, 0]
             p_y = p_grad[0][:, -1, 0]
-            return tf.stack([u, v, p_x, p_y], axis=1)
+            return K.stack([u, v, p_x, p_y], axis=1)
         z = K.zeros_like(xyt)[:, 0, 0]
-        return tf.stack([z, z, z, z], axis=1)
+        return K.stack([z, z, z, z], axis=1)
 
     def lambda_d2(tensor):
         xyt = tensor[0]
@@ -138,9 +115,9 @@ if __name__ == '__main__':
             v_y = v_grad[:, -1, 1]
             v_t = v_grad[:, -1, 2]
 
-            return tf.stack([u_x, u_y, u_t, v_x, v_y, v_t], axis=1)
+            return K.stack([u_x, u_y, u_t, v_x, v_y, v_t], axis=1)
         z = K.zeros_like(xyt)[:, 0, 0]
-        return tf.stack([z, z, z, z, z, z], axis=1)
+        return K.stack([z, z, z, z, z, z], axis=1)
 
     def lambda_d3(tensor):
         xyt = tensor[0]
@@ -156,9 +133,9 @@ if __name__ == '__main__':
 
             v_xx = v_x_grad[:, -1, 0]
             v_yy = v_y_grad[:, -1, 1]
-            return tf.stack([u_xx, u_yy, v_xx, v_yy], axis=1)
+            return K.stack([u_xx, u_yy, v_xx, v_yy], axis=1)
         z = K.zeros_like(xyt)[:, 0, 0]
-        return tf.stack([z, z, z, z], axis=1)
+        return K.stack([z, z, z, z], axis=1)
 
     def lambda_output(tensor):
         d1 = tensor[0]
@@ -181,8 +158,17 @@ if __name__ == '__main__':
         lstm_w = 0.8
         pinns_w = 1 - lstm_w
 
-        return tf.stack([lstm_w*lstm_u + pinns_w*u, lstm_w*lstm_v+pinns_w*v, f_u, f_v], axis=1)
+        return K.stack([lstm_w*lstm_u + pinns_w*u, lstm_w*lstm_v+pinns_w*v, f_u, f_v], axis=1)
     
+    class PINNSLayer(keras.layers.Layer):
+        def __init__(self):
+            super(PINNSLayer, self).__init__()
+            self.pinns1 = keras.layers.Lambda(lambda_d1)
+
+        def call(self, inputs):
+            input_layer = inputs[0]
+            dense_output = inputs[1]
+            lstm_output = inputs[2]
     # %% Model
     print('Preparing Model')
     input_layer = keras.layers.Input(shape=(LOOKBACK, len(INPUTS)))
@@ -190,7 +176,8 @@ if __name__ == '__main__':
     # Dense Branch
     # For input, take the current timestep and X,Y,T (recall layer[Batch_Size, Timestep, Input])
     # prev_dense = input_layer[:, -1, :3]
-    dense1 = keras.layers.Dense(20)(input_layer[:, -1, :3])
+    # dense1 = keras.layers.Dense(20)(input_layer[:, -1, :3])
+    dense1 = keras.layers.Dense(20)(input_layer)
     dense2 = keras.layers.Dense(20)(dense1)
     dense_output = keras.layers.Dense(2, name='Dense_Output')(dense2)
 
@@ -205,9 +192,13 @@ if __name__ == '__main__':
     pinns1 = keras.layers.Lambda(lambda_d1)([input_layer, dense_output])
     pinns2 = keras.layers.Lambda(lambda_d2)([input_layer, pinns1])
     pinns3 = keras.layers.Lambda(lambda_d3)([input_layer, pinns2])
-
-    # PINNs/Combination Lambda
     pinns_output = keras.layers.Lambda(lambda_output)([pinns1, pinns2, pinns3, lstm_output])
+
+    # pinns1 = LambD1()([input_layer, dense_output])
+    # pinns2 = LambD2()([input_layer, pinns1])
+    # pinns3 = LambD3()([input_layer, pinns2])
+    # pinns_output = LambOutput()([pinns1, pinns2, pinns3, lstm_output])
+
     lstm_model = keras.Model(input_layer, pinns_output)
     lstm_model.compile(optimizer=keras.optimizers.Adam(), loss=keras.losses.MeanSquaredError(reduction=losses.Reduction.AUTO))
     lstm_model.summary()
@@ -230,7 +221,7 @@ if __name__ == '__main__':
     print('Fitting model')
     history = lstm_model.fit(
         x=train_generator,
-        epochs=1,
+        epochs=30,
         validation_data=val_generator,
         verbose=1,
         callbacks=[early_stopping, checkpoint, tensorboard],
@@ -240,27 +231,27 @@ if __name__ == '__main__':
     duration = end_time-start_time
     print(f'Fitting took {duration:.3f}sec = {duration/60:.3f}min = {duration/60/60:.3f}h')
 
-    # #%% Model evaluation
-    # loss = history.history['loss']
-    # val_loss = history.history['val_loss']
+    #%% Model evaluation
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
 
-    # fig, ax = plt.subplots()
-    # ax.plot(loss, label = 'train')
-    # ax.plot(val_loss, label = 'val')
-    # ax.set_title('Loss (Mean Squared Logarithmic Error)')
-    # ax.legend(loc='upper right')
+    fig, ax = plt.subplots()
+    ax.plot(loss, label = 'train')
+    ax.plot(val_loss, label = 'val')
+    ax.set_title('Loss (Mean Squared Error)')
+    ax.legend(loc='upper right')
 
-    # #%% Individual MSEs
-    # from sklearn.metrics import mean_squared_error
-    # y_true = []
-    # y_pred = []
-    # with tqdm(total=len(val_generator), desc='Computing MSEs') as p_bar:
-    #     for batch_x, batch_y in val_generator:
-    #         pred = lstm_model.predict(batch_x)
-    #         y_pred.extend(pred)
-    #         y_true.extend(batch_y)
-    #         p_bar.update()
-    #         # p_bar.postfix = f'MSE: {mean_squared_error(y_true, y_pred, multioutput="raw_values")}'
+    #%% Individual MSEs
+    from sklearn.metrics import mean_squared_error
+    y_true = []
+    y_pred = []
+    with tqdm(total=len(val_generator), desc='Computing MSEs') as p_bar:
+        for batch_x, batch_y in val_generator:
+            pred = lstm_model.predict(batch_x)
+            y_pred.extend(pred)
+            y_true.extend(batch_y)
+            p_bar.update()
+            # p_bar.postfix = f'MSE: {mean_squared_error(y_true, y_pred, multioutput="raw_values")}'
 
     # print('Final', mean_squared_error(y_true, y_pred, multioutput='raw_values'))
             
