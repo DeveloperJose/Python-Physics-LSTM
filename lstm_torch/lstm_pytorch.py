@@ -29,14 +29,15 @@ import data
 import keys
 import models
 
-EXPERIMENT_N = 1
-N_EPOCHS = 2
+EXPERIMENT_N = 2
 
 # Model Hyperparameters
-BATCH_SIZE = 5024*7
+N_EPOCHS = 600
+
+BATCH_SIZE = 5024*4
 N_WORKERS = 4
-EARLY_STOP_PATIENCE = 5
-REDUCE_LR_PATIENCE = 3
+EARLY_STOP_PATIENCE = 30
+REDUCE_LR_PATIENCE = 15
 
 # Dataset Parameters
 LOOKBACK = 10
@@ -60,14 +61,13 @@ if __name__ == '__main__':
     sc = scaling.load_or_create(SCALER_PATH, SCALER_CREATION_DIRS, INPUTS, OUTPUTS)
 
     # %% Data set-up
-    # train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=LOOKBACK, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, start=1, end=510+1)
-    train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=LOOKBACK, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, start=1, end=50)
-    train_dataset.sciann = False
+    train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=LOOKBACK, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, start=1, end=510+1)
+    train_dataset.sciann = True
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=N_WORKERS)
 
     val_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=LOOKBACK, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, start=510, end=638+1)
-    val_dataset.sciann = False
+    val_dataset.sciann = True
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=N_WORKERS)
 
     # %% CUDA set-up
@@ -79,7 +79,7 @@ if __name__ == '__main__':
     print(f'CUDA is {is_cuda}')
 
     # %% Model set-up
-    model = models.PINNS(len(INPUTS), 256, len(OUTPUTS))
+    model = models.PINNS(len(INPUTS), lstm_activations=256, lstm_layers=2, dense_activations=20, dense_layers=1)
     model.to(device)
     print(model)
 
@@ -116,24 +116,24 @@ if __name__ == '__main__':
                 p_bar.update()
                 p_bar.postfix = f'train_loss: {train_loss/(step+1):.5f}'
 
-        # Validation
+        # Validation. I need the gradients so don't call torch.no_grad()!
         model.eval()
         val_loss = 0
         separate_val_mses = []
-        with torch.no_grad():
-            with tqdm(total=len(val_loader), desc='Validating') as p_bar:
-                for step, (batch_x, batch_y) in enumerate(val_loader):
-                    batch_x, batch_y = batch_x.to(device), batch_y.to(device)
 
-                    y_pred = model(batch_x)
-                    loss = loss_fn(y_pred, batch_y)
+        with tqdm(total=len(val_loader), desc='Validating') as p_bar:
+            for step, (batch_x, batch_y) in enumerate(val_loader):
+                batch_x, batch_y = batch_x.to(device), batch_y.to(device)
 
-                    separate_val_mses.append(mean_squared_error(batch_y.cpu(), y_pred.cpu(), multioutput="raw_values"))
+                y_pred = model(batch_x)
+                loss = loss_fn(y_pred, batch_y)
 
-                    # Update validation batch stats
-                    val_loss += loss.item()
-                    p_bar.update()
-                    p_bar.postfix = f'val_loss: {val_loss/(step+1):.5f}'
+                separate_val_mses.append(mean_squared_error(batch_y.detach().cpu(), y_pred.detach().cpu(), multioutput="raw_values"))
+
+                # Update validation batch stats
+                val_loss += loss.item()
+                p_bar.update()
+                p_bar.postfix = f'val_loss: {val_loss/(step+1):.5f}'
 
         # Update training stats
         train_loss = train_loss/len(train_loader)
@@ -142,7 +142,11 @@ if __name__ == '__main__':
 
         train_history.append(train_loss)
         val_history.append(val_loss)
-        print(f'\tEpoch {epoch+1} Stats | train_loss: {train_loss:.5f} | val_loss: {val_loss:.5f} | val_mses: {separate_val_mses}')
+        lambda1 = model.lambda1.detach().cpu().item()
+        lambda2 = model.lambda2.detach().cpu().item()
+        lstm_w = model.lstm_w.detach().cpu().item()
+        lstm_w_sigmoid = torch.sigmoid(model.lstm_w.detach().cpu()).item()
+        print(f'\tEpoch {epoch+1} Stats | train_loss: {train_loss:.5f} | val_loss: {val_loss:.5f} | val_mses: {separate_val_mses} | lambda1: {lambda1:.10f} | lambda2: {lambda2:.10f} | lstm_w: {lstm_w:.3f} -> sigmoid: {lstm_w_sigmoid:.3f}')
         
         # Callbacks
         if best_loss - val_loss > 0.001:
