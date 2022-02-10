@@ -146,3 +146,6 @@ keys.py
 
 # Personal logs
 experiments.txt
+
+# PyTorch models
+*.pth.tar
