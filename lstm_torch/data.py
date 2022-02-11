@@ -43,7 +43,7 @@ def read_np(filename, inputs_str, outputs_str, scaler=None):
 
 
 class SledDataGenerator(Dataset):
-    def __init__(self, data_dir, sequence_length, inputs, outputs, scaler, model_state, start, end, step = 1):
+    def __init__(self, data_dir, sequence_length, inputs, outputs, scaler, start, end, step = 1):
         print(f'Loading dataset {data_dir} from t={start} to t={end}')
 
         self.data_dir = Path(data_dir)
@@ -52,7 +52,6 @@ class SledDataGenerator(Dataset):
         self.inputs = inputs
         self.outputs = outputs
         self.scaler = scaler
-        self.model_state = model_state
 
         self.start = start
         self.end = end
@@ -109,8 +108,8 @@ class SledDataGenerator(Dataset):
 
         Y = self.y_data[timestep, row]
 
-        if self.model_state == models.State.BOTH_BRANCHES or self.model_state == models.State.PINNS_ONLY:
-            Y = torch.cat((Y, torch.zeros(2)))
+        # if self.model_state == models.State.BOTH_BRANCHES or self.model_state == models.State.PINNS_ONLY:
+        #     Y = torch.cat((Y, torch.zeros(2)))
 
         # # Check if we are at the beginning and need to pad
         # if timestep >= self.sequence_length - 1:

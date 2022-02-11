@@ -12,10 +12,10 @@ N_LSTM_OUTPUT = 2
 # [Psi, P]
 N_DENSE_OUTPUT = 2
 
-class State(Enum):
-    LSTM_ONLY = 1
-    PINNS_ONLY = 2
-    BOTH_BRANCHES = 3
+# class State(Enum):
+#     LSTM_ONLY = 1
+#     PINNS_ONLY = 2
+#     BOTH_BRANCHES = 3
 
 # https://discuss.pytorch.org/t/any-pytorch-function-can-work-as-keras-timedistributed/1346
 class TimeDistributed(nn.Module):
@@ -40,7 +40,7 @@ class TimeDistributed(nn.Module):
         return y
 
 class PINNS(nn.Module):
-    def __init__(self, seq_len, n_inputs, n_lstm_layers, lstm_activations, lstm_td_activations, n_dense_layers, dense_activations, state=State.BOTH_BRANCHES):
+    def __init__(self, seq_len, n_inputs, n_lstm_layers, lstm_activations, lstm_td_activations, n_dense_layers, dense_activations, use_pinns=True, use_lstm=True):
         super(PINNS, self).__init__()
 
         self.seq_len = seq_len
@@ -51,13 +51,16 @@ class PINNS(nn.Module):
         self.lstm_td_activations = lstm_td_activations
 
         self.n_dense_layers = n_dense_layers
-        self.dense_activations = dense_activations
 
-        self.state = state
+        self.use_pinns = use_pinns
+        self.use_lstm = use_lstm
+
+        # Other parameters
         self.dropout = nn.Dropout(p=0)
+        self.loss_fn = nn.MSELoss()
 
         # LSTM Branch
-        if state==State.LSTM_ONLY or state==State.BOTH_BRANCHES:
+        if use_lstm:
             self.bidirectional = True
             self.lstm = nn.LSTM(input_size=n_inputs, hidden_size=lstm_activations, num_layers=n_lstm_layers, batch_first=True, bidirectional=self.bidirectional)
 
@@ -77,114 +80,151 @@ class PINNS(nn.Module):
                 self.lstm_fc = nn.Linear(seq_len*lstm_td_activations, N_LSTM_OUTPUT)
 
         # PINNs Branch
-        if state==State.PINNS_ONLY or state==State.BOTH_BRANCHES:
+        if use_pinns:
             self.dense_branch = nn.ModuleList([nn.Linear(n_inputs, dense_activations)])
             for i in range(n_dense_layers):
-                self.dense_branch.append(nn.Linear(dense_activations, dense_activations))
+                self.dense_branch.append(nn.Linear(dense_activations, dense_activations*2))
+                dense_activations *= 2
             self.dense_branch.append(nn.Linear(dense_activations, N_DENSE_OUTPUT))
 
             # Learnable Parameters
             self.lambda1 = nn.Parameter(torch.tensor([1.0], requires_grad=True).cuda())
             self.lambda2 = nn.Parameter(torch.tensor([1.0], requires_grad=True).cuda())
-            self.lstm_w = nn.Parameter(torch.tensor([0.1], requires_grad=True).cuda())
+            self.lstm_w = nn.Parameter(torch.tensor([0.5], requires_grad=True).cuda())
 
-    def forward(self, input):
-        if self.state==State.PINNS_ONLY or self.state==State.BOTH_BRANCHES:
-            # Require gradients for input so we can use it in autograd
-            input.requires_grad = True
+    def losses(self, input, y_true):
+        l_losses = []
+        if self.use_pinns and self.use_lstm:
+            # Forward passes
+            pinns_u, pinns_v, f_u, f_v = self.pde_grads(input)
+            lstm_output = self.forward_lstm(input)
+            lstm_u = lstm_output[:, 0]
+            lstm_v = lstm_output[:, 1]
 
-            # Constraints for parameters
-            lambda1 = self.lambda1
-            lambda2 = self.lambda2
+            # Combine outputs
             lw = torch.sigmoid(self.lstm_w)
             pw = 1 - lw
 
-            # %% Dense Pass (psi_p)
-            dense_input = input
-            for layer in self.dense_branch[:-1]:
-                dense_input = torch.tanh(layer(dense_input))
-            dense_output = self.dense_branch[-1](dense_input)
-            psi = dense_output[:, :, 0]
-            p = dense_output[:, :, 1]
+            pred_u = (lw * lstm_u) + (pw * pinns_u)
+            pred_v = (lw * lstm_v) + (pw * pinns_v)
 
-            # %% First Derivatives | [batch, timestep, input] | 0=X, 1=Y, 2=T
-            # create_graph needed for higher order derivatives, retain_graph not needed
-            psi_grads = autograd.grad(psi, input, grad_outputs=torch.ones_like(psi), create_graph=True)[0]
-            p_grads = autograd.grad(p, input, grad_outputs=torch.ones_like(p), create_graph=True)[0]
+            # %% Losses
+            l_losses = [
+                self.loss_fn(pred_u, y_true[:, 0]), 
+                self.loss_fn(pred_v, y_true[:, 1]),
+                self.loss_fn(f_u, torch.zeros_like(f_u)),
+                self.loss_fn(f_v, torch.zeros_like(f_v))
+            ]
+        elif self.use_pinns:
+            pinns_u, pinns_v, f_u, f_v = self.pde_grads(input)
+            l_losses = [
+                self.loss_fn(pinns_u, y_true[:, 0]), 
+                self.loss_fn(pinns_v, y_true[:, 1]),
+                self.loss_fn(f_u, torch.zeros_like(f_u)),
+                self.loss_fn(f_v, torch.zeros_like(f_v))
+            ]
+        else:
+            lstm_output = self.forward_lstm(input)
+            lstm_u = lstm_output[:, 0]
+            lstm_v = lstm_output[:, 1]
+            l_losses = [
+                self.loss_fn(lstm_u, y_true[:, 0]), 
+                self.loss_fn(lstm_v, y_true[:, 1]),
+            ]
+        return l_losses
 
-            u = psi_grads[:, -1, 1]
-            v = -psi_grads[:, -1, 0]
-            p_x = p_grads[:, -1, 0]
-            p_y = p_grads[:, -1, 1]
+        
+    def forward_pinns(self, input):
+        dense_input = input
+        for layer in self.dense_branch[:-1]:
+            dense_input = torch.tanh(layer(dense_input))
+        dense_output = self.dense_branch[-1](dense_input)
+        return dense_output
 
-            # %% Second Derivatives
-            u_grads = autograd.grad(u, input, grad_outputs=torch.ones_like(u), create_graph=True)[0]
-            v_grads = autograd.grad(v, input, grad_outputs=torch.ones_like(v), create_graph=True)[0]
+    def forward_lstm(self, input):
+        # %% LSTM Pass (u_l, v_l)
+        batch_size = input.shape[0]
+        # h_0 = torch.zeros(self.n_lstm_layers, batch_size, self.lstm_activations, requires_grad=True).cuda()
+        # c_0 = torch.zeros(self.n_lstm_layers, batch_size, self.lstm_activations, requires_grad=True).cuda()
+        # output, (hn, cn) = self.lstm(input, (h_0, c_0))
 
-            u_x = u_grads[:, -1, 0]
-            u_y = u_grads[:, -1, 1]
-            u_t = u_grads[:, -1, 2]
+        if self.bidirectional:
+            output, (hn, cn) = self.lstm(input)
+            
+            # Cat experiment
+            cat = torch.cat((hn[-2, :, :], hn[-1, :, :]), dim=1)
+            td_output = self.lstm_td(cat).view(batch_size, -1)
 
-            v_x = v_grads[:, -1, 0]
-            v_y = v_grads[:, -1, 1]
-            v_t = v_grads[:, -1, 2]
+            # Non-Cat
+            # td_output = self.lstm_td(output).view(batch_size, -1)
 
-            # %% Third Derivatives
-            u_x_grads = autograd.grad(u_x, input, grad_outputs=torch.ones_like(u_x), create_graph=True)[0]
-            u_y_grads = autograd.grad(u_y, input, grad_outputs=torch.ones_like(u_y), create_graph=True)[0]
-            v_x_grads = autograd.grad(v_x, input, grad_outputs=torch.ones_like(v_x), create_graph=True)[0]
-            v_y_grads = autograd.grad(v_y, input, grad_outputs=torch.ones_like(v_y), create_graph=True)[0]
-
-            u_xx = u_x_grads[:, -1, 0]
-            u_yy = u_y_grads[:, -1, 1]
-
-            v_xx = v_x_grads[:, -1, 0]
-            v_yy = v_y_grads[:, -1, 1]
-
-            # %% PDEs
-            f_u = u_t + lambda1*(u*u_x + v*u_y) + p_x - lambda2*(u_xx + u_yy) 
-            f_v = v_t + lambda1*(u*v_x + v*v_y) + p_y - lambda2*(v_xx + v_yy)
-
-        if self.state==State.LSTM_ONLY or self.state==State.BOTH_BRANCHES:
-            # %% LSTM Pass (u_l, v_l)
-            batch_size = input.shape[0]
-            # h_0 = torch.zeros(self.n_lstm_layers, batch_size, self.lstm_activations, requires_grad=True).cuda()
-            # c_0 = torch.zeros(self.n_lstm_layers, batch_size, self.lstm_activations, requires_grad=True).cuda()
-            # output, (hn, cn) = self.lstm(input, (h_0, c_0))
-
-            if self.bidirectional:
-                output, (hn, cn) = self.lstm(input)
-                
-                # Cat experiment
-                cat = torch.cat((hn[-2, :, :], hn[-1, :, :]), dim=1)
-                td_output = self.lstm_td(cat).view(batch_size, -1)
-
-                # Non-Cat
-                # td_output = self.lstm_td(output).view(batch_size, -1)
-
-                # Rest
-                lstm_d1 = self.dropout(torch.relu(self.lstm_fc1(td_output)))
-                lstm_output = self.lstm_fc2(lstm_d1)
-                # lstm_output = self.lstm_fc(td_output)
-            else:
-                output, (hn, cn) = self.lstm(input)
-                td_output = self.lstm_td(output).view(batch_size, -1)
-                lstm_output = self.lstm_fc(td_output)
-
+            # Rest
+            lstm_d1 = self.dropout(torch.relu(self.lstm_fc1(td_output)))
+            lstm_output = self.lstm_fc2(lstm_d1)
+            # lstm_output = self.lstm_fc(td_output)
+        else:
+            output, (hn, cn) = self.lstm(input)
+            td_output = self.lstm_td(output).view(batch_size, -1)
+            lstm_output = self.lstm_fc(td_output)
+            
             # Use the hidden state of the last timestep OR use pooling (avg/max)
             # td_output = self.td(hn).view(-1, self.num_layers*self.lookback)
             # lstm_output = self.fc_lstm(output[:, -1, :])
             # out = self.fc(torch.mean(hn, 0))
             # out = self.fc(torch.max(hn)[0])
+        return lstm_output
 
-        if self.state==State.BOTH_BRANCHES:
-            # %% Final Combination
-            lstm_u = lstm_output[:, 0]
-            lstm_v = lstm_output[:, 1]
-            pred_u = (lw * lstm_u) + (pw * u)
-            pred_v = (lw * lstm_v) + (pw * v)
-            return torch.stack((pred_u, pred_v, f_u, f_v), 1)
-        elif self.state==State.PINNS_ONLY:
-            return torch.stack((u, v, f_u, f_v), 1)
-        else:
-            return lstm_output
+    def forward(self, input):
+        raise NotImplemented('Forward not used')
+
+    def pde_grads(self, input):
+        # Require gradients for input so we can use it in autograd
+        input.requires_grad = True
+
+        # Constraints for parameters
+        lambda1 = self.lambda1
+        lambda2 = self.lambda2
+
+        # %% Dense Pass (psi_p)
+        dense_output = self.forward_pinns(input)
+        psi = dense_output[:, :, 0]
+        p = dense_output[:, :, 1]
+
+        # %% First Derivatives | [batch, timestep, input] | 0=X, 1=Y, 2=T
+        # create_graph needed for higher order derivatives, retain_graph not needed
+        psi_grads = autograd.grad(psi, input, grad_outputs=torch.ones_like(psi), create_graph=True)[0]
+        p_grads = autograd.grad(p, input, grad_outputs=torch.ones_like(p), create_graph=True)[0]
+
+        u = psi_grads[:, -1, 1]
+        v = -psi_grads[:, -1, 0]
+        p_x = p_grads[:, -1, 0]
+        p_y = p_grads[:, -1, 1]
+
+        # %% Second Derivatives
+        u_grads = autograd.grad(u, input, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+        v_grads = autograd.grad(v, input, grad_outputs=torch.ones_like(v), create_graph=True)[0]
+
+        u_x = u_grads[:, -1, 0]
+        u_y = u_grads[:, -1, 1]
+        u_t = u_grads[:, -1, 2]
+
+        v_x = v_grads[:, -1, 0]
+        v_y = v_grads[:, -1, 1]
+        v_t = v_grads[:, -1, 2]
+
+        # %% Third Derivatives
+        u_x_grads = autograd.grad(u_x, input, grad_outputs=torch.ones_like(u_x), create_graph=True)[0]
+        u_y_grads = autograd.grad(u_y, input, grad_outputs=torch.ones_like(u_y), create_graph=True)[0]
+        v_x_grads = autograd.grad(v_x, input, grad_outputs=torch.ones_like(v_x), create_graph=True)[0]
+        v_y_grads = autograd.grad(v_y, input, grad_outputs=torch.ones_like(v_y), create_graph=True)[0]
+
+        u_xx = u_x_grads[:, -1, 0]
+        u_yy = u_y_grads[:, -1, 1]
+
+        v_xx = v_x_grads[:, -1, 0]
+        v_yy = v_y_grads[:, -1, 1]
+
+        # %% PDEs
+        f_u = u_t + lambda1*(u*u_x + v*u_y) + p_x - lambda2*(u_xx + u_yy) 
+        f_v = v_t + lambda1*(u*v_x + v*v_y) + p_y - lambda2*(v_xx + v_yy)
+        return u, v, f_u, f_v
