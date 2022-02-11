@@ -40,7 +40,7 @@ class TimeDistributed(nn.Module):
         return y
 
 class PINNS(nn.Module):
-    def __init__(self, seq_len, n_inputs, n_lstm_layers, lstm_activations, lstm_td_activations, n_dense_layers, dense_activations, use_pinns=True, use_lstm=True):
+    def __init__(self, seq_len, batch_size, n_inputs, n_lstm_layers, lstm_activations, lstm_td_activations, n_dense_layers, dense_activations, use_pinns=True, use_lstm=True):
         super(PINNS, self).__init__()
 
         self.seq_len = seq_len
@@ -56,7 +56,7 @@ class PINNS(nn.Module):
         self.use_lstm = use_lstm
 
         # Other parameters
-        self.dropout = nn.Dropout(p=0)
+        self.dropout = nn.Dropout(p=0.2)
         self.loss_fn = nn.MSELoss()
 
         # LSTM Branch
@@ -67,7 +67,7 @@ class PINNS(nn.Module):
             if self.bidirectional:
                 # Cat
                 self.lstm_td = TimeDistributed(nn.Linear(lstm_activations*2, lstm_td_activations), batch_first=True)
-                self.lstm_fc1 = nn.Linear(seq_len, 20)
+                self.lstm_fc1 = nn.Linear(lstm_td_activations, 20)
 
                 # Non-Cat
                 # self.lstm_td = TimeDistributed(nn.Linear(lstm_activations*2, lstm_td_activations), batch_first=True)
@@ -88,7 +88,8 @@ class PINNS(nn.Module):
             self.dense_branch.append(nn.Linear(dense_activations, N_DENSE_OUTPUT))
 
             # Learnable Parameters
-            self.lambda1 = nn.Parameter(torch.tensor([1.0], requires_grad=True).cuda())
+            # self.lambda1 = nn.Parameter(torch.tensor([1.0], requires_grad=True).cuda())
+            self.lambda1 = 1.0
             self.lambda2 = nn.Parameter(torch.tensor([1.0], requires_grad=True).cuda())
             self.lstm_w = nn.Parameter(torch.tensor([0.5], requires_grad=True).cuda())
 
@@ -159,7 +160,8 @@ class PINNS(nn.Module):
             # td_output = self.lstm_td(output).view(batch_size, -1)
 
             # Rest
-            lstm_d1 = self.dropout(torch.relu(self.lstm_fc1(td_output)))
+            lstm_fc1 = self.lstm_fc1(td_output)
+            lstm_d1 = self.dropout(torch.relu(lstm_fc1))
             lstm_output = self.lstm_fc2(lstm_d1)
             # lstm_output = self.lstm_fc(td_output)
         else:

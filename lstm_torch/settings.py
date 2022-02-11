@@ -2,14 +2,14 @@ import os
 from pathlib import Path
 
 class Settings:
-    EXPERIMENT_N = 3
-    LOOKBACK = 1
-    USE_LSTM = False
+    EXPERIMENT_N = 4
+    LOOKBACK = 3
+    USE_LSTM = True
     USE_PINNS = True
 
-    BATCH_SIZE = 20000
+    BATCH_SIZE = 12000
     N_WORKERS = 6
-    EARLY_STOP_PATIENCE = 1000
+    EARLY_STOP_PATIENCE = 5
 
     PLOTS_PATH = Path('plots')
     CHECKPOINTS_PATH = Path('checkpoints')

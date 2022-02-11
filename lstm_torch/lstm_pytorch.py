@@ -61,7 +61,8 @@ if __name__ == '__main__':
     print(f'CUDA is {is_cuda}')
 
     # %% Model set-up
-    model = models.PINNS(seq_len=S.LOOKBACK, n_inputs=len(S.INPUTS), n_lstm_layers=2, lstm_activations=128, lstm_td_activations=10, dense_activations=10, n_dense_layers=5, use_lstm=S.USE_LSTM, use_pinns=S.USE_PINNS)
+    model = models.PINNS(seq_len=S.LOOKBACK, batch_size=S.BATCH_SIZE, n_inputs=len(S.INPUTS), 
+        n_lstm_layers=2, lstm_activations=128, lstm_td_activations=10, dense_activations=10, n_dense_layers=5, use_lstm=S.USE_LSTM, use_pinns=S.USE_PINNS)
     model.to(device)
     print(f'{model} | lstm={model.use_lstm} | pinns={model.use_pinns}')
 
@@ -71,5 +72,5 @@ if __name__ == '__main__':
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(adam_opt, patience=REDUCE_LR_PATIENCE)
 
     # %% Training loop
-    training.train(device, model, adam_opt, 200, train_loader, val_loader, client)
-    training.train(device, model, lbfgs_opt, 100, train_loader, val_loader, client)
+    training.train(device, model, adam_opt, 10, train_loader, val_loader, client)
+    # training.train(device, model, lbfgs_opt, 100, train_loader, val_loader, client)

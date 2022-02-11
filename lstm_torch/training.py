@@ -5,10 +5,11 @@ from tqdm import tqdm
 from timeit import default_timer as timer
 from pathlib import Path
 
+import models
 import keys
 from settings import Settings as S
 
-def train(device, model, opt, n_epochs, train_loader, val_loader, client):
+def train(device, model: models.PINNS, opt, n_epochs, train_loader, val_loader, client):
     opt_name = opt.__class__.__name__
     print('Training with', opt_name)
     
@@ -22,9 +23,17 @@ def train(device, model, opt, n_epochs, train_loader, val_loader, client):
     checkpoint_filename = S.CHECKPOINTS_PATH / f'LSTM_torch_exp{S.EXPERIMENT_N}_{opt_name}-best.pth.tar'
     plot_filename = S.PLOTS_PATH / f'lstm_exp_{S.EXPERIMENT_N}_{opt_name}.png'
     
+    # Force LSTM_Only for half of the epochs
+    model.use_lstm = True
+    model.use_pinns = False
+
     start_time = timer()
     for epoch in range(n_epochs):
         print(f'Epoch {epoch+1}/{n_epochs}')
+
+        if epoch+1 == n_epochs//2:
+            print('Adding PINNs')
+            model.use_pinns = True
         # Batch Training
         model.train()
         train_loss = 0
@@ -76,7 +85,8 @@ def train(device, model, opt, n_epochs, train_loader, val_loader, client):
         val_history.append(val_loss)
         output_str = f'\tEpoch {epoch+1} Stats | train_loss: {train_loss:.5f} | val_loss: {val_loss:.5f} | val_mses: {separate_val_mses}'
         if model.use_pinns:
-            lambda1 = model.lambda1.detach().cpu().item()
+            # lambda1 = model.lambda1.detach().cpu().item()
+            lambda1 = model.lambda1
             lambda2 = model.lambda2.detach().cpu().item()
             lstm_w = model.lstm_w.detach().cpu().item()
             lstm_w_sigmoid = torch.sigmoid(model.lstm_w.detach().cpu()).item()
