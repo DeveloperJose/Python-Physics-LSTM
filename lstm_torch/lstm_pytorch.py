@@ -50,7 +50,7 @@ if __name__ == '__main__':
     print(f'CUDA is {is_cuda}')
 
     # %% Model set-up
-    model = models.PINNS(seq_len=S.LOOKBACK, batch_size=S.BATCH_SIZE, n_inputs=len(S.INPUTS), n_lstm_layers=1, lstm_activations=128, lstm_td_activations=10)
+    model = models.PINNS(seq_len=S.LOOKBACK, batch_size=S.BATCH_SIZE, n_inputs=len(S.INPUTS), n_lstm_layers=2, lstm_activations=128, lstm_td_activations=10)
     model.to(device)
     print(model)
 
