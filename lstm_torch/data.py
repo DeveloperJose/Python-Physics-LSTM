@@ -123,7 +123,6 @@ class SledDataGenerator(Dataset):
 
         # if self.sciann:
             # Y = np.append(Y, [0.0, 0.0])
-        
         return X, Y
 
     def __read_np__(self, timestep):
