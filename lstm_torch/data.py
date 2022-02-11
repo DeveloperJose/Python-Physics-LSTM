@@ -9,6 +9,7 @@ from sklearn.preprocessing import StandardScaler
 import torch
 from torch.utils.data import Dataset
 
+import models
 # WIDTH = 197
 # HEIGHT = 72
 COLUMNS_H = ['X', 'Y', 'T', 'P', 'Vu', 'Vv', 'W.VF']
@@ -42,7 +43,7 @@ def read_np(filename, inputs_str, outputs_str, scaler=None):
 
 
 class SledDataGenerator(Dataset):
-    def __init__(self, data_dir, sequence_length, inputs, outputs, scaler, start, end, step = 1):
+    def __init__(self, data_dir, sequence_length, inputs, outputs, scaler, model_state, start, end, step = 1):
         print(f'Loading dataset {data_dir} from t={start} to t={end}')
 
         self.data_dir = Path(data_dir)
@@ -51,6 +52,7 @@ class SledDataGenerator(Dataset):
         self.inputs = inputs
         self.outputs = outputs
         self.scaler = scaler
+        self.model_state = model_state
 
         self.start = start
         self.end = end
@@ -83,21 +85,23 @@ class SledDataGenerator(Dataset):
 
         # Generate a list of the valid timesteps
         self.n_timesteps = self.x_data.shape[0]
-        self.list_timesteps = np.arange(self.sequence_length, self.n_timesteps)
+        # self.list_timesteps = np.arange(self.sequence_length, self.n_timesteps)
+        self.list_timesteps = np.arange(self.n_timesteps)
         self.list_rows = np.arange(self.x_data.shape[1])
         self.list_IDs = [(t, r) for t in self.list_timesteps for r in self.list_rows]
 
     def __len__(self):
         return len(self.list_IDs)
-        # return self.x_data.shape[0]
 
     # https://www.crosstab.io/articles/time-series-pytorch-lstm
     def __getitem__(self, index):
         timestep, row = self.list_IDs[index]
-
         # Check if we are at the beginning and need to pad
         if timestep >= self.sequence_length-1:
-            X = self.x_data[timestep-self.sequence_length:timestep, row]
+            # This one doesn't include current
+            # X = self.x_data[timestep-self.sequence_length:timestep, row]
+
+            X = self.x_data[timestep-self.sequence_length+1:timestep+1, row]
         else:
             padding = self.x_data[0, row].repeat(self.sequence_length-timestep-1, 1)
             X = self.x_data[0:(timestep+1), row]
@@ -105,7 +109,7 @@ class SledDataGenerator(Dataset):
 
         Y = self.y_data[timestep, row]
 
-        if self.sciann:
+        if self.model_state == models.State.BOTH_BRANCHES or self.model_state == models.State.PINNS_ONLY:
             Y = torch.cat((Y, torch.zeros(2)))
 
         # # Check if we are at the beginning and need to pad

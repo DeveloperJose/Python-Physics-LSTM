@@ -29,22 +29,27 @@ import data
 import keys
 import models
 
-EXPERIMENT_N = 2
+EXPERIMENT_N = 3
+MODEL_STATE = models.State.PINNS_ONLY
 
 # Model Hyperparameters
-N_EPOCHS = 600
+N_EPOCHS = 3
 
-BATCH_SIZE = 5024*4
+BATCH_SIZE = 20000
 N_WORKERS = 4
-EARLY_STOP_PATIENCE = 30
-REDUCE_LR_PATIENCE = 15
+EARLY_STOP_PATIENCE = 5
+REDUCE_LR_PATIENCE = 3
 
 # Dataset Parameters
-LOOKBACK = 10
+if MODEL_STATE == models.State.PINNS_ONLY:
+    LOOKBACK = 1
+else:
+    LOOKBACK = 10
+
 INPUTS = ['X', 'Y', 'T', 'Vu', 'Vv', 'P', 'W.VF']
 OUTPUTS = ['Vu', 'Vv']
 SCALER_PATH = os.path.join('output', f'scaler_{INPUTS}.pkl')
-SCALER_CREATION_DIRS = ['/home/jperez/data/sled250', '/home/jperez/data/sled255']
+SCALER_CREATION_DIRS = ['/home/jperez/data/sled250']
 
 # No more scientific notation
 np.set_printoptions(suppress=True, linewidth=np.inf)
@@ -58,18 +63,8 @@ if __name__ == '__main__':
     client = Client(keys.account_sid, keys.auth_token)
 
     # %% Scaler set-up
-    sc = scaling.load_or_create(SCALER_PATH, SCALER_CREATION_DIRS, INPUTS, OUTPUTS)
-
-    # %% Data set-up
-    train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=LOOKBACK, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, start=1, end=510+1)
-    train_dataset.sciann = True
-
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=N_WORKERS)
-
-    val_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=LOOKBACK, inputs=INPUTS, outputs=OUTPUTS, scaler=sc, start=510, end=638+1)
-    val_dataset.sciann = True
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=N_WORKERS)
-
+    scaler = scaling.load_or_create(SCALER_PATH, SCALER_CREATION_DIRS, INPUTS, OUTPUTS)
+    
     # %% CUDA set-up
     is_cuda = torch.cuda.is_available()
     if is_cuda:
@@ -79,13 +74,20 @@ if __name__ == '__main__':
     print(f'CUDA is {is_cuda}')
 
     # %% Model set-up
-    model = models.PINNS(len(INPUTS), lstm_activations=256, lstm_layers=2, dense_activations=20, dense_layers=1)
+    model = models.PINNS(seq_len=LOOKBACK, n_inputs=len(INPUTS), n_lstm_layers=2, lstm_activations=128, lstm_td_activations=10, dense_activations=20, n_dense_layers=5, state=MODEL_STATE)
     model.to(device)
-    print(model)
+    print(model, 'with state', model.state)
 
     loss_fn = nn.MSELoss()
-    opt = optim.Adam(model.parameters(), lr=0.001)
+    opt = optim.Adam(model.parameters(), eps=1e-07)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(opt, patience=REDUCE_LR_PATIENCE)
+
+    # %% Data set-up
+    train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=LOOKBACK, inputs=INPUTS, outputs=OUTPUTS, scaler=scaler, model_state=model.state, start=1, end=510+1)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=N_WORKERS)
+
+    val_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=LOOKBACK, inputs=INPUTS, outputs=OUTPUTS, scaler=scaler,  model_state=model.state, start=510, end=638+1)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=N_WORKERS)
 
     # %% Training loop
     best_loss = np.inf
@@ -142,11 +144,14 @@ if __name__ == '__main__':
 
         train_history.append(train_loss)
         val_history.append(val_loss)
-        lambda1 = model.lambda1.detach().cpu().item()
-        lambda2 = model.lambda2.detach().cpu().item()
-        lstm_w = model.lstm_w.detach().cpu().item()
-        lstm_w_sigmoid = torch.sigmoid(model.lstm_w.detach().cpu()).item()
-        print(f'\tEpoch {epoch+1} Stats | train_loss: {train_loss:.5f} | val_loss: {val_loss:.5f} | val_mses: {separate_val_mses} | lambda1: {lambda1:.10f} | lambda2: {lambda2:.10f} | lstm_w: {lstm_w:.3f} -> sigmoid: {lstm_w_sigmoid:.3f}')
+        output_str = f'\tEpoch {epoch+1} Stats | train_loss: {train_loss:.5f} | val_loss: {val_loss:.5f} | val_mses: {separate_val_mses}'
+        if model.state == models.State.PINNS_ONLY or model.state == models.State.BOTH_BRANCHES:
+            lambda1 = model.lambda1.detach().cpu().item()
+            lambda2 = model.lambda2.detach().cpu().item()
+            lstm_w = model.lstm_w.detach().cpu().item()
+            lstm_w_sigmoid = torch.sigmoid(model.lstm_w.detach().cpu()).item()
+            output_str += f' | lambda1: {lambda1:.10f} | lambda2: {lambda2:.10f} | lstm_w: {lstm_w:.3f} -> sigmoid: {lstm_w_sigmoid:.3f}'
+        print(output_str)
         
         # Callbacks
         if best_loss - val_loss > 0.001:
@@ -174,16 +179,16 @@ if __name__ == '__main__':
     duration = timer() - start_time
     print(f'Training took {duration:.3f}sec = {duration/60:.3f}min = {duration/60/60:.3f}h')
 
-    fig, ax = plt.subplots()
-    ax.plot(train_history, label = 'train')
-    ax.plot(val_history, label = 'val')
-    ax.set_title('Loss (Mean Squared Error)')
-    ax.legend(loc='upper right')
-    plt.savefig(f'plots/lstm_exp_{EXPERIMENT_N}.png')
+    # fig, ax = plt.subplots()
+    # ax.plot(train_history, label = 'train')
+    # ax.plot(val_history, label = 'val')
+    # ax.set_title('Loss (Mean Squared Error)')
+    # ax.legend(loc='upper right')
+    # plt.savefig(f'plots/lstm_exp_{EXPERIMENT_N}.png')
 
-    #%% Send a text message via Twilio
-    client.messages.create(
-        body=f'PyTorch Model {EXPERIMENT_N} has completed with val_loss {best_loss} | individual={best_loss_separate}',
-        from_=keys.src_phone,
-        to=keys.dst_phone
-    )
+    # #%% Send a text message via Twilio
+    # client.messages.create(
+    #     body=f'PyTorch Model {EXPERIMENT_N} has completed with val_loss {best_loss} | individual={best_loss_separate}',
+    #     from_=keys.src_phone,
+    #     to=keys.dst_phone
+    # )
