@@ -3,11 +3,11 @@ from pathlib import Path
 
 class Settings:
     EXPERIMENT_N = 3
-    LOOKBACK = 1
+    LOOKBACK = 10
     USE_LSTM = False
     USE_PINNS = True
 
-    BATCH_SIZE = 20000
+    BATCH_SIZE = 64
     N_WORKERS = 6
     EARLY_STOP_PATIENCE = 1000
 

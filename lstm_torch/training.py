@@ -5,10 +5,11 @@ from tqdm import tqdm
 from timeit import default_timer as timer
 from pathlib import Path
 
+import models
 import keys
 from settings import Settings as S
 
-def train(device, model, opt, n_epochs, train_loader, val_loader, client):
+def train(device, model: models.PINNS, opt, n_epochs, train_loader, val_loader, client):
     opt_name = opt.__class__.__name__
     print('Training with', opt_name)
     
@@ -32,15 +33,14 @@ def train(device, model, opt, n_epochs, train_loader, val_loader, client):
             for step, (batch_x, batch_y) in enumerate(train_loader):
                 batch_x, batch_y = batch_x.to(device), batch_y.to(device)
 
-                def closure():
-                    opt.zero_grad()
-                    losses = model.losses(batch_x, batch_y)
-                    loss = sum(losses)
-                    loss.backward()
-                    return loss
+                # def closure():
+                opt.zero_grad()
+                losses = model.losses(batch_x, batch_y)
+                loss = sum(losses)
+                loss.backward()
 
-                opt.step(closure)
-                loss = closure()
+                # loss = closure()
+                opt.step()
 
                 # Update training batch stats
                 train_loss += loss.item()
@@ -74,14 +74,9 @@ def train(device, model, opt, n_epochs, train_loader, val_loader, client):
 
         train_history.append(train_loss)
         val_history.append(val_loss)
-        output_str = f'\tEpoch {epoch+1} Stats | train_loss: {train_loss:.5f} | val_loss: {val_loss:.5f} | val_mses: {separate_val_mses}'
-        if model.use_pinns:
-            lambda1 = model.lambda1.detach().cpu().item()
-            lambda2 = model.lambda2.detach().cpu().item()
-            lstm_w = model.lstm_w.detach().cpu().item()
-            lstm_w_sigmoid = torch.sigmoid(model.lstm_w.detach().cpu()).item()
-            output_str += f' | lambda1: {lambda1:.10f} | lambda2: {lambda2:.10f} | lstm_w: {lstm_w:.3f} -> sigmoid: {lstm_w_sigmoid:.3f}'
-        print(output_str)
+
+        lambda2 = model.lambda2.detach().cpu().item()
+        print(f'\tEpoch {epoch+1} Stats | train_loss: {train_loss:.5f} | val_loss: {val_loss:.5f} | val_mses: {separate_val_mses} | lambda2: {lambda2:.10f}')
         
         # Callbacks
         if best_loss - val_loss > 0.001:
