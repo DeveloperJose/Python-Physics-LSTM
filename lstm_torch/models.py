@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.autograd as autograd
 
-from custom_lstms import LSTMState, script_lstm, double_flatten_states, flatten_states
+# from custom_lstms import LSTMState, script_lstm, double_flatten_states, flatten_states
+from jit_gru import JitGRU, JitGRULayer
 
 # [Psi, P]
 N_OUTPUTS = 2
@@ -49,8 +50,8 @@ class PINNS(nn.Module):
         # LSTM Branch
         self.bidirectional = False
         # self.lstm_test = nn.LSTM(input_size=n_inputs, hidden_size=lstm_activations, num_layers=n_lstm_layers, batch_first=False, bidirectional=self.bidirectional)
-        self.lstm = script_lstm(input_size=n_inputs, hidden_size=lstm_activations, num_layers=n_lstm_layers, batch_first=False, bidirectional=self.bidirectional)
-
+        # self.lstm = script_lstm(input_size=n_inputs, hidden_size=lstm_activations, num_layers=n_lstm_layers, batch_first=False, bidirectional=self.bidirectional)
+        self.lstm = JitGRU(input_size=n_inputs, hidden_size=lstm_activations, num_layers=n_lstm_layers, batch_first=False)
         if self.bidirectional:
             # Cat
             self.lstm_td = TimeDistributed(nn.Linear(lstm_activations*2, lstm_td_activations), batch_first=False)
@@ -63,8 +64,9 @@ class PINNS(nn.Module):
             # LSTM Output
             self.lstm_fc2 = nn.Linear(20, N_OUTPUTS)
         else:
-            self.lstm_td = TimeDistributed(nn.Linear(lstm_activations*2, lstm_td_activations), batch_first=False)
-            self.lstm_fc1 = nn.Linear(seq_len, 20)
+            self.lstm_td = TimeDistributed(nn.Linear(lstm_activations*self.n_lstm_layers, lstm_td_activations), batch_first=False)
+            # self.lstm_fc1 = nn.Linear(seq_len, 20)
+            self.lstm_fc1 = nn.Linear(lstm_activations, 20)
             self.lstm_fc2 = nn.Linear(20, N_OUTPUTS)
 
         # PINNs Branch
@@ -101,11 +103,9 @@ class PINNS(nn.Module):
     #     dense_output = self.dense_branch[-1](dense_input)
     #     return dense_output
 
-    def init_hidden(self):
-        states = [LSTMState(torch.randn(self.batch_size, self.lstm_activations).cuda(),
-                torch.randn(self.batch_size, self.lstm_activations).cuda())
-                for _ in range(self.n_lstm_layers)]
-        return states
+    # def init_hidden(self):
+    #     states = [LSTMState(torch.randn(self.batch_size, self.lstm_activations).cuda(), torch.randn(self.batch_size, self.lstm_activations).cuda())]
+    #     return states
 
     def forward(self, input):
         # %% Change from batch first to timestep first for LSTM
@@ -118,37 +118,39 @@ class PINNS(nn.Module):
         # output, (hn, cn) = self.lstm(input, (h_0, c_0))
 
         if self.bidirectional:
-            states = self.init_hidden()
-            output, out_states = self.lstm(input, states)
-            hn, hc = double_flatten_states(out_states)
+            pass
+            # states = self.init_hidden()
+            # output, out_states = self.lstm(input, states)
+            # hn, hc = double_flatten_states(out_states)
             
-            # Cat experiment
-            cat = torch.cat((hn[-2, :, :], hn[-1, :, :]), dim=1)
-            td_output = self.lstm_td(cat).view(self.batch_size, -1)
+            # # Cat experiment
+            # cat = torch.cat((hn[-2, :, :], hn[-1, :, :]), dim=1)
+            # td_output = self.lstm_td(cat).view(self.batch_size, -1)
 
-            # Non-Cat
-            # td_output = self.lstm_td(output).view(batch_size, -1)
+            # # Non-Cat
+            # # td_output = self.lstm_td(output).view(batch_size, -1)
 
-            # Rest
-            fc1_output = self.lstm_fc1(td_output)
-            fc1_relu = torch.relu(fc1_output)
-            lstm_d1 = self.dropout(fc1_relu)
-            lstm_output = self.lstm_fc2(lstm_d1)
+            # # Rest
+            # fc1_output = self.lstm_fc1(td_output)
+            # fc1_relu = torch.relu(fc1_output)
+            # lstm_d1 = self.dropout(fc1_relu)
+            # lstm_output = self.lstm_fc2(lstm_d1)
         else:
-            states = self.init_hidden()
-            output, out_states = self.lstm(input, states)
-            hn, hc = flatten_states(out_states)
+            # states = self.init_hidden()
+            output, out_states = self.lstm(input)
+            # hn, hc = flatten_states(out_states)
             
             # Cat experiment
-            cat = torch.cat((hn[-2, :, :], hn[-1, :, :]), dim=1)
-            td_output = self.lstm_td(cat).view(self.batch_size, -1)
+            # cat = torch.cat((hn[-2, :, :], hn[-1, :, :]), dim=1)
+            # td_output = self.lstm_td(cat).view(self.batch_size, -1)
             # td_output = self.lstm_td(hn).view(self.batch_size, -1)
 
             # Non-Cat
-            # td_output = self.lstm_td(output).view(batch_size, -1)
-
+            # td_output = self.lstm_td(output).view(self.batch_size, -1)
+            # import pdb
+            # pdb.set_trace()
             # Rest
-            fc1_output = self.lstm_fc1(td_output)
+            fc1_output = self.lstm_fc1(output[:, -1, :])
             fc1_relu = torch.relu(fc1_output)
             lstm_d1 = self.dropout(fc1_relu)
             lstm_output = self.lstm_fc2(lstm_d1)
@@ -171,8 +173,8 @@ class PINNS(nn.Module):
 
         # %% First Derivatives | [batch, timestep, input] | 0=X, 1=Y, 2=T
         # create_graph needed for higher order derivatives, retain_graph not needed
-        psi_grads = autograd.grad(psi, input, grad_outputs=torch.ones_like(psi), create_graph=True)[0]
-        p_grads = autograd.grad(p, input, grad_outputs=torch.ones_like(p), create_graph=True)[0]
+        psi_grads = autograd.grad(psi, input, grad_outputs=torch.ones_like(psi), create_graph=True, retain_graph=True, allow_unused=True)[0]
+        p_grads = autograd.grad(p, input, grad_outputs=torch.ones_like(p), create_graph=True, retain_graph=True, allow_unused=True)[0]
 
         u = psi_grads[:, -1, 1]
         v = -psi_grads[:, -1, 0]
@@ -180,8 +182,8 @@ class PINNS(nn.Module):
         p_y = p_grads[:, -1, 1]
 
         # %% Second Derivatives
-        u_grads = autograd.grad(u, input, grad_outputs=torch.ones_like(u), create_graph=True)[0]
-        v_grads = autograd.grad(v, input, grad_outputs=torch.ones_like(v), create_graph=True)[0]
+        u_grads = autograd.grad(u, input, grad_outputs=torch.ones_like(u), create_graph=True, retain_graph=True, allow_unused=True)[0]
+        v_grads = autograd.grad(v, input, grad_outputs=torch.ones_like(v), create_graph=True, retain_graph=True, allow_unused=True)[0]
 
         u_x = u_grads[:, -1, 0]
         u_y = u_grads[:, -1, 1]
@@ -192,10 +194,10 @@ class PINNS(nn.Module):
         v_t = v_grads[:, -1, 2]
 
         # %% Third Derivatives
-        u_x_grads = autograd.grad(u_x, input, grad_outputs=torch.ones_like(u_x), create_graph=True)[0]
-        u_y_grads = autograd.grad(u_y, input, grad_outputs=torch.ones_like(u_y), create_graph=True)[0]
-        v_x_grads = autograd.grad(v_x, input, grad_outputs=torch.ones_like(v_x), create_graph=True)[0]
-        v_y_grads = autograd.grad(v_y, input, grad_outputs=torch.ones_like(v_y), create_graph=True)[0]
+        u_x_grads = autograd.grad(u_x, input, grad_outputs=torch.ones_like(u_x), create_graph=True, retain_graph=True, allow_unused=True)[0]
+        u_y_grads = autograd.grad(u_y, input, grad_outputs=torch.ones_like(u_y), create_graph=True, retain_graph=True, allow_unused=True)[0]
+        v_x_grads = autograd.grad(v_x, input, grad_outputs=torch.ones_like(v_x), create_graph=True, retain_graph=True, allow_unused=True)[0]
+        v_y_grads = autograd.grad(v_y, input, grad_outputs=torch.ones_like(v_y), create_graph=True, retain_graph=True, allow_unused=True)[0]
 
         u_xx = u_x_grads[:, -1, 0]
         u_yy = u_y_grads[:, -1, 1]
