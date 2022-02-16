@@ -32,43 +32,48 @@ import keys
 import models
 
 class Settings:
-    EXPERIMENT_N = 13
+    EXPERIMENT_N = 26
 
     INPUTS = ['X', 'Y', 'T', 'Vu', 'Vv', 'P', 'W.VF']
     OUTPUTS = ['Vu', 'Vv']
 
+    # USE_VU = 'Vu' in OUTPUTS
+    # USE_VV = 'Vv' in OUTPUTS
+
     # Training Parameters
-    N_EPOCHS = 500
-    SEQ_LEN = 5 # AKA: Lookback
-    FIRST_BATCH_SIZE = 100000 # 200000
-    SECOND_BATCH_SIZE = 10000 # 20000
+    N_EPOCHS = 100
+    SEQ_LEN = 10 # AKA: Lookback
+    FIRST_BATCH_SIZE = 20000 # 25000 # 200000
+    SECOND_BATCH_SIZE = 5000 # 20000
     N_WORKERS = 6
-    EARLY_STOP_PATIENCE = 50
-    REDUCE_LR_PATIENCE = 25
+    EARLY_STOP_PATIENCE = 15 # 50
+    REDUCE_LR_PATIENCE = 10 # 25
 
     # Data Loading
     PLOTS_PATH = Path('plots')
     CHECKPOINTS_PATH = Path('checkpoints')
-    SCALER_PATH = os.path.join('output', f'scaler_{INPUTS}.pkl')
-    SCALER_CREATION_DIRS = ['/home/jperez/data/sled250']
+    SCALER_PATH = os.path.join('output', f'scaler1_{INPUTS}.pkl')
+    SCALER_CREATION_DIRS = ['/home/jperez/data/sled250'] # ['/home/jperez/data/sled255']
 
-    PREV_CHECKPOINT = CHECKPOINTS_PATH / 'LSTM_torch_exp10_Adam-final-best.pth.tar'
+    PREV_CHECKPOINT = None # Path('best') / 'model.pth.tar'
 
     # Network Architecture
     USE_LSTM = True
-    USE_PINNS = False
+    USE_PINNS = True
 
     BIDIRECTIONAL_LSTM = True
     N_LSTM_LAYERS = 2
     LSTM_ACTIVATIONS = 32
-    LSTM_TD_ACTIVATIONS = 16
+    LSTM_TD_ACTIVATIONS = 32
+    LSTM_N_DENSE_LAYERS = 1
+    LSTM_DENSE_ACTIVATIONS = 32
 
     N_DENSE_LAYERS = 5
     DENSE_ACTIVATIONS = 10
 
     # Constants
     N_INPUTS = len(INPUTS)
-    N_LSTM_OUTPUT = 2 # [Vu, Vv]
+    N_LSTM_OUTPUT = len(OUTPUTS) # [Vu, Vv]
     N_DENSE_OUTPUT = 2 # [Psi, P]
 
 S = Settings
@@ -145,15 +150,20 @@ if __name__ == '__main__':
     
     # %% Data set-up
     batch_size = S.SECOND_BATCH_SIZE if S.USE_PINNS else S.FIRST_BATCH_SIZE
+    # train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=1, end=638+1)
     train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=1, end=510+1)
+    # train_dataset = data.SledDataGenerator('/home/jperez/data/sled255', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=19, end=623+1)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=S.N_WORKERS, pin_memory=True)
 
+    # val_dataset = data.SledDataGenerator('/home/jperez/data/sled255', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=19, end=760+1)
     val_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=510, end=638+1)
+    # val_dataset = data.SledDataGenerator('/home/jperez/data/sled255', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=623, end=760+1)
+    
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=S.N_WORKERS, pin_memory=True)
     
     # %% Model set-up
     model = models.PINNS(S)
-    opt = optim.Adam(model.parameters(), eps=1e-07)
+    opt = optim.Adam(model.parameters(), lr=0.001)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(opt, patience=S.REDUCE_LR_PATIENCE)
     print(f'{model}')
 
@@ -246,14 +256,15 @@ if __name__ == '__main__':
     
     # %% Post-Training
     duration = timer() - start_time
-    print(f'Training took {duration:.3f}sec = {duration/60:.3f}min = {duration/60/60:.3f}h')
+    print(f'\tTraining took {duration:.3f}sec = {duration/60:.3f}min = {duration/60/60:.3f}h')
+    print(f'\tThe best val_loss was {best_loss} at epoch {best_epoch} with MSEs {best_loss_separate}')
 
     # %% Plot history
     plot_history(train_history, val_history, plot_final_filename)
 
     #%% Send a text message via Twilio
     client.messages.create(
-        body=f'PyTorch Model {S.EXPERIMENT_N} for optimizer {opt_name} has completed with val_loss {best_loss} | individual={best_loss_separate}',
+        body=f'PyTorch Model {S.EXPERIMENT_N} for optimizer {opt_name} has completed with best val_loss {best_loss} in epoch {best_epoch} after {epoch+1} epochs | individual={best_loss_separate}',
         from_=keys.src_phone,
         to=keys.dst_phone
     )
