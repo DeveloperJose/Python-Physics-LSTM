@@ -61,7 +61,7 @@ class PINNS(nn.Module):
         # self.lambda1 = nn.Parameter(torch.tensor([1.0], requires_grad=True).cuda())
         self.lambda1 = torch.tensor(1.0, requires_grad=False, device='cuda')
         self.lambda2 = nn.Parameter(torch.tensor([1.0], requires_grad=True, device='cuda'))
-        self.lstm_w = nn.Parameter(torch.tensor([0.5], requires_grad=True, device='cuda'))
+        self.lstm_w = torch.tensor(0.5, requires_grad=False, device='cuda') #nn.Parameter(torch.tensor([0.5], requires_grad=True, device='cuda'))
 
     def losses(self, input, y_true):
         l_losses = []

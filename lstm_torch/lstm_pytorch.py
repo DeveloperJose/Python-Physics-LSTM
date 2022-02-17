@@ -32,7 +32,7 @@ import keys
 import models
 
 class Settings:
-    EXPERIMENT_N = 26
+    EXPERIMENT_N = 34
 
     INPUTS = ['X', 'Y', 'T', 'Vu', 'Vv', 'P', 'W.VF']
     OUTPUTS = ['Vu', 'Vv']
@@ -41,13 +41,13 @@ class Settings:
     # USE_VV = 'Vv' in OUTPUTS
 
     # Training Parameters
-    N_EPOCHS = 100
-    SEQ_LEN = 10 # AKA: Lookback
+    N_EPOCHS = 200
+    SEQ_LEN = 3 # AKA: Lookback
     FIRST_BATCH_SIZE = 20000 # 25000 # 200000
     SECOND_BATCH_SIZE = 5000 # 20000
     N_WORKERS = 6
-    EARLY_STOP_PATIENCE = 15 # 50
-    REDUCE_LR_PATIENCE = 10 # 25
+    EARLY_STOP_PATIENCE = 50 # 50
+    REDUCE_LR_PATIENCE = 25 # 25
 
     # Data Loading
     PLOTS_PATH = Path('plots')
@@ -55,10 +55,10 @@ class Settings:
     SCALER_PATH = os.path.join('output', f'scaler1_{INPUTS}.pkl')
     SCALER_CREATION_DIRS = ['/home/jperez/data/sled250'] # ['/home/jperez/data/sled255']
 
-    PREV_CHECKPOINT = None # Path('best') / 'model.pth.tar'
+    PREV_CHECKPOINT = None # Path('checkpoints') / 'LSTM_torch_exp30_Adam-final-best.pth.tar' # Path('best') / 'model.pth.tar'
 
     # Network Architecture
-    USE_LSTM = True
+    USE_LSTM = False
     USE_PINNS = True
 
     BIDIRECTIONAL_LSTM = True
@@ -68,8 +68,8 @@ class Settings:
     LSTM_N_DENSE_LAYERS = 1
     LSTM_DENSE_ACTIVATIONS = 32
 
-    N_DENSE_LAYERS = 5
-    DENSE_ACTIVATIONS = 10
+    N_DENSE_LAYERS = 1
+    DENSE_ACTIVATIONS = 32
 
     # Constants
     N_INPUTS = len(INPUTS)
