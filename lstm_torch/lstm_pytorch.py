@@ -32,7 +32,7 @@ import keys
 import models
 
 class Settings:
-    EXPERIMENT_N = 34
+    EXPERIMENT_N = 35
 
     INPUTS = ['X', 'Y', 'T', 'Vu', 'Vv', 'P', 'W.VF']
     OUTPUTS = ['Vu', 'Vv']
@@ -52,13 +52,13 @@ class Settings:
     # Data Loading
     PLOTS_PATH = Path('plots')
     CHECKPOINTS_PATH = Path('checkpoints')
-    SCALER_PATH = os.path.join('output', f'scaler1_{INPUTS}.pkl')
-    SCALER_CREATION_DIRS = ['/home/jperez/data/sled250'] # ['/home/jperez/data/sled255']
+    SCALER_PATH = os.path.join('output', f'scaler_{INPUTS}.pkl')
+    SCALER_CREATION_DIRS = ['/home/jperez/data/sled250']
 
     PREV_CHECKPOINT = None # Path('checkpoints') / 'LSTM_torch_exp30_Adam-final-best.pth.tar' # Path('best') / 'model.pth.tar'
 
     # Network Architecture
-    USE_LSTM = False
+    USE_LSTM = True
     USE_PINNS = True
 
     BIDIRECTIONAL_LSTM = True
@@ -150,15 +150,13 @@ if __name__ == '__main__':
     
     # %% Data set-up
     batch_size = S.SECOND_BATCH_SIZE if S.USE_PINNS else S.FIRST_BATCH_SIZE
-    # train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=1, end=638+1)
-    train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=1, end=510+1)
-    # train_dataset = data.SledDataGenerator('/home/jperez/data/sled255', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=19, end=623+1)
+
+    train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, 
+                                            start=1, end=742)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=S.N_WORKERS, pin_memory=True)
 
-    # val_dataset = data.SledDataGenerator('/home/jperez/data/sled255', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=19, end=760+1)
-    val_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=510, end=638+1)
-    # val_dataset = data.SledDataGenerator('/home/jperez/data/sled255', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, start=623, end=760+1)
-    
+    val_dataset = data.SledDataGenerator('/home/jperez/data/sled300', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, 
+                                            start=1, end=742)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=S.N_WORKERS, pin_memory=True)
     
     # %% Model set-up
