@@ -1,101 +1,71 @@
-from enum import Enum
 from unicodedata import bidirectional
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.autograd as autograd
 
-# [Vu, Vv]
-N_LSTM_OUTPUT = 2
+from lstm_pytorch import Settings
 
-# [Psi, P]
-N_DENSE_OUTPUT = 2
-
-# class State(Enum):
-#     LSTM_ONLY = 1
-#     PINNS_ONLY = 2
-#     BOTH_BRANCHES = 3
-
-# https://discuss.pytorch.org/t/any-pytorch-function-can-work-as-keras-timedistributed/1346
-class TimeDistributed(nn.Module):
-    def __init__(self, module, batch_first=False):
-        super(TimeDistributed, self).__init__()
-        self.module = module
-        self.batch_first = batch_first
-
-    def forward(self, x):
-        if len(x.size()) <= 2:
-            return self.module(x)
-
-        # Squash samples and timesteps into a single axis
-        x_reshape = x.contiguous().view(-1, x.size(-1))  # (samples * timesteps, input_size)
-        y = self.module(x_reshape)
-
-        # We have to reshape Y
-        if self.batch_first:
-            y = y.contiguous().view(x.size(0), -1, y.size(-1))  # (samples, timesteps, output_size)
-        else:
-            y = y.view(-1, x.size(1), y.size(-1))  # (timesteps, samples, output_size)
-        return y
+@torch.jit.script
+def fused_pde(u, u_x, u_y, u_t, u_xx, u_yy, v, v_x, v_y, v_t, v_xx, v_yy, p_x, p_y, lambda1, lambda2):
+    f_u = u_t + lambda1*(u*u_x + v*u_y) + p_x - lambda2*(u_xx + u_yy) 
+    f_v = v_t + lambda1*(u*v_x + v*v_y) + p_y - lambda2*(v_xx + v_yy)
+    return f_u, f_v
 
 class PINNS(nn.Module):
-    def __init__(self, seq_len, batch_size, n_inputs, n_lstm_layers, lstm_activations, lstm_td_activations, n_dense_layers, dense_activations, use_pinns=True, use_lstm=True):
+    def __init__(self, S: Settings):
         super(PINNS, self).__init__()
-
-        self.seq_len = seq_len
-        self.n_inputs = n_inputs
-
-        self.n_lstm_layers = n_lstm_layers
-        self.lstm_activations = lstm_activations
-        self.lstm_td_activations = lstm_td_activations
-
-        self.n_dense_layers = n_dense_layers
-
-        self.use_pinns = use_pinns
-        self.use_lstm = use_lstm
+        self.S = S
 
         # Other parameters
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0)
         self.loss_fn = nn.MSELoss()
 
         # LSTM Branch
-        if use_lstm:
-            self.bidirectional = True
-            self.lstm = nn.LSTM(input_size=n_inputs, hidden_size=lstm_activations, num_layers=n_lstm_layers, batch_first=True, bidirectional=self.bidirectional)
+        mult = 2 if S.BIDIRECTIONAL_LSTM else 1
+        self.lstm = nn.LSTM(S.N_INPUTS, S.LSTM_ACTIVATIONS, batch_first=True, num_layers=S.N_LSTM_LAYERS, bidirectional=S.BIDIRECTIONAL_LSTM, dropout=0)
+        self.lstm_td = TimeDistributed(nn.Linear(S.LSTM_ACTIVATIONS*mult, S.LSTM_TD_ACTIVATIONS))
 
-            if self.bidirectional:
-                # Cat
-                self.lstm_td = TimeDistributed(nn.Linear(lstm_activations*2, lstm_td_activations), batch_first=True)
-                self.lstm_fc1 = nn.Linear(lstm_td_activations, 20)
+        self.lstm_dense_layers = nn.ModuleList([nn.Linear(S.LSTM_TD_ACTIVATIONS, S.LSTM_DENSE_ACTIVATIONS)])
+        for _ in range(S.LSTM_N_DENSE_LAYERS):
+            self.lstm_dense_layers.append(nn.Linear(S.LSTM_DENSE_ACTIVATIONS, S.LSTM_DENSE_ACTIVATIONS))
+        self.lstm_dense_layers.append(nn.Linear(S.LSTM_DENSE_ACTIVATIONS, S.N_LSTM_OUTPUT))
 
-                # Non-Cat
-                # self.lstm_td = TimeDistributed(nn.Linear(lstm_activations*2, lstm_td_activations), batch_first=True)
-                # self.lstm_fc1 = nn.Linear(seq_len*lstm_td_activations, 20)
+        self.lstm_fcout = nn.Linear(S.LSTM_TD_ACTIVATIONS, S.N_LSTM_OUTPUT)
+        # self.lstm_fcout = nn.Linear(S.SEQ_LEN*S.LSTM_TD_ACTIVATIONS*mult, S.N_LSTM_OUTPUT)
 
-                # LSTM Output
-                self.lstm_fc2 = nn.Linear(20, N_LSTM_OUTPUT)
-            else:
-                self.lstm_td = TimeDistributed(nn.Linear(lstm_activations, lstm_td_activations), batch_first=True)
-                self.lstm_fc = nn.Linear(seq_len*lstm_td_activations, N_LSTM_OUTPUT)
+        # if S.BIDIRECTIONAL_LSTM:
+        #     # self.lstm_td = TimeDistributed(nn.Linear(S.LSTM_ACTIVATIONS*2, S.LSTM_TD_ACTIVATIONS), batch_first=True)
+            
+
+
+        #     # self.lstm_fc1 = nn.Linear(S.LSTM_TD_ACTIVATIONS, S.LSTM_DENSE_ACTIVATIONS)
+        #     # self.lstm_fcout = nn.Linear(S.LSTM_TD_ACTIVATIONS, S.N_LSTM_OUTPUT)
+
+            
+
+        # else:
+        #     # self.lstm_td = TimeDistributed(nn.Linear(S.LSTM_ACTIVATIONS, S.LSTM_TD_ACTIVATIONS), batch_first=True)
+        #     # self.lstm_fc = nn.Linear(S.SEQ_LEN*S.LSTM_TD_ACTIVATIONS, S.N_LSTM_OUTPUT)
+        #     raise Exception('Bidirectional LSTM only')
 
         # PINNs Branch
-        if use_pinns:
-            self.dense_branch = nn.ModuleList([nn.Linear(n_inputs, dense_activations)])
-            for i in range(n_dense_layers):
-                self.dense_branch.append(nn.Linear(dense_activations, dense_activations*2))
-                dense_activations *= 2
-            self.dense_branch.append(nn.Linear(dense_activations, N_DENSE_OUTPUT))
+        dense_activations = S.DENSE_ACTIVATIONS
+        self.dense_branch = nn.ModuleList([nn.Linear(S.N_INPUTS, dense_activations)])
+        for i in range(S.N_DENSE_LAYERS):
+            self.dense_branch.append(nn.Linear(dense_activations, dense_activations*2))
+            dense_activations *= 2
+        self.dense_branch.append(nn.Linear(dense_activations, S.N_DENSE_OUTPUT))
 
-            # Learnable Parameters
-            # self.lambda1 = nn.Parameter(torch.tensor([1.0], requires_grad=True).cuda())
-            self.lambda1 = 1.0
-            self.lambda2 = nn.Parameter(torch.tensor([1.0], requires_grad=True).cuda())
-            self.lstm_w = nn.Parameter(torch.tensor([0.5], requires_grad=True).cuda())
+        # Learnable Parameters
+        # self.lambda1 = nn.Parameter(torch.tensor([1.0], requires_grad=True).cuda())
+        self.lambda1 = torch.tensor(1.0, requires_grad=False, device='cuda')
+        self.lambda2 = nn.Parameter(torch.tensor([1.0], requires_grad=True, device='cuda'))
+        self.lstm_w = torch.tensor(0.5, requires_grad=False, device='cuda') #nn.Parameter(torch.tensor([0.5], requires_grad=True, device='cuda'))
 
     def losses(self, input, y_true):
         l_losses = []
-        if self.use_pinns and self.use_lstm:
+        if self.S.USE_PINNS and self.S.USE_LSTM:
             # Forward passes
             pinns_u, pinns_v, f_u, f_v = self.pde_grads(input)
             lstm_output = self.forward_lstm(input)
@@ -116,7 +86,7 @@ class PINNS(nn.Module):
                 self.loss_fn(f_u, torch.zeros_like(f_u)),
                 self.loss_fn(f_v, torch.zeros_like(f_v))
             ]
-        elif self.use_pinns:
+        elif self.S.USE_PINNS:
             pinns_u, pinns_v, f_u, f_v = self.pde_grads(input)
             l_losses = [
                 self.loss_fn(pinns_u, y_true[:, 0]), 
@@ -145,29 +115,36 @@ class PINNS(nn.Module):
     def forward_lstm(self, input):
         # %% LSTM Pass (u_l, v_l)
         batch_size = input.shape[0]
-        # h_0 = torch.zeros(self.n_lstm_layers, batch_size, self.lstm_activations, requires_grad=True).cuda()
-        # c_0 = torch.zeros(self.n_lstm_layers, batch_size, self.lstm_activations, requires_grad=True).cuda()
-        # output, (hn, cn) = self.lstm(input, (h_0, c_0))
 
-        if self.bidirectional:
+        if self.S.BIDIRECTIONAL_LSTM:
             output, (hn, cn) = self.lstm(input)
-            
+            # output2, (hn2, cn2) = self.lstm2(output1)
             # Cat experiment
             cat = torch.cat((hn[-2, :, :], hn[-1, :, :]), dim=1)
             td_output = self.lstm_td(cat).view(batch_size, -1)
+            # lstm_output = self.lstm_fcout(td_output)
+
+            lstm_fc = td_output
+            for layer in self.lstm_dense_layers[:-1]:
+                lstm_fc = self.dropout(torch.relu(layer(lstm_fc)))
+            lstm_output = self.lstm_dense_layers[-1](lstm_fc)
 
             # Non-Cat
             # td_output = self.lstm_td(output).view(batch_size, -1)
 
             # Rest
-            lstm_fc1 = self.lstm_fc1(td_output)
-            lstm_d1 = self.dropout(torch.relu(lstm_fc1))
-            lstm_output = self.lstm_fc2(lstm_d1)
-            # lstm_output = self.lstm_fc(td_output)
+            # lstm_fc1 = self.lstm_fc1(td_output)
+            # lstm_d1 = self.dropout(torch.relu(lstm_fc1))
+            # lstm_output = self.lstm_fcout(lstm_d1)
+            # lstm_output = self.lstm_fcout(td_output)
         else:
-            output, (hn, cn) = self.lstm(input)
-            td_output = self.lstm_td(output).view(batch_size, -1)
-            lstm_output = self.lstm_fc(td_output)
+            output1, (hn1, cn1) = self.lstm1(input)
+            output2, (hn2, cn2) = self.lstm2(output1)
+
+            
+            td_output = self.lstm_td(output2)
+            td_output = td_output.view(batch_size, -1)
+            lstm_output = self.lstm_fcout(td_output)
             
             # Use the hidden state of the last timestep OR use pooling (avg/max)
             # td_output = self.td(hn).view(-1, self.num_layers*self.lookback)
@@ -227,6 +204,27 @@ class PINNS(nn.Module):
         v_yy = v_y_grads[:, -1, 1]
 
         # %% PDEs
-        f_u = u_t + lambda1*(u*u_x + v*u_y) + p_x - lambda2*(u_xx + u_yy) 
-        f_v = v_t + lambda1*(u*v_x + v*v_y) + p_y - lambda2*(v_xx + v_yy)
+        f_u, f_v = fused_pde(u, u_x, u_y, u_t, u_xx, u_yy, v, v_x, v_y, v_t, v_xx, v_yy, p_x, p_y, lambda1, lambda2)
         return u, v, f_u, f_v
+
+# https://discuss.pytorch.org/t/any-pytorch-function-can-work-as-keras-timedistributed/1346
+class TimeDistributed(nn.Module):
+    def __init__(self, module, batch_first=False):
+        super(TimeDistributed, self).__init__()
+        self.module = module
+        self.batch_first = batch_first
+
+    def forward(self, x):
+        if len(x.size()) <= 2:
+            return self.module(x)
+
+        # Squash samples and timesteps into a single axis
+        x_reshape = x.contiguous().view(-1, x.size(-1))  # (samples * timesteps, input_size)
+        y = self.module(x_reshape)
+
+        # We have to reshape Y
+        if self.batch_first:
+            y = y.contiguous().view(x.size(0), -1, y.size(-1))  # (samples, timesteps, output_size)
+        else:
+            y = y.view(-1, x.size(1), y.size(-1))  # (timesteps, samples, output_size)
+        return y

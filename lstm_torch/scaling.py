@@ -9,7 +9,6 @@ from sklearn.preprocessing import StandardScaler
 
 from data import read_np
 
-
 def load_or_create(scaler_path: str, creation_dirs: List[str], inputs: List[str], outputs: List[str]):
     if os.path.exists(scaler_path):
         print('Loading previous scaler')

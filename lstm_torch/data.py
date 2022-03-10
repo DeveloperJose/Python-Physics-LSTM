@@ -9,7 +9,6 @@ from sklearn.preprocessing import StandardScaler
 import torch
 from torch.utils.data import Dataset
 
-import models
 # WIDTH = 197
 # HEIGHT = 72
 COLUMNS_H = ['X', 'Y', 'T', 'P', 'Vu', 'Vv', 'W.VF']
