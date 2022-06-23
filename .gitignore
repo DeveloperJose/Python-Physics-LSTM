@@ -149,3 +149,7 @@ experiments.txt
 
 # PyTorch models
 *.pth.tar
+
+# Results
+*.avi
+*.png

@@ -32,7 +32,7 @@ import keys
 import models
 
 class Settings:
-    EXPERIMENT_N = 35
+    EXPERIMENT_N = 43
 
     INPUTS = ['X', 'Y', 'T', 'Vu', 'Vv', 'P', 'W.VF']
     OUTPUTS = ['Vu', 'Vv']
@@ -41,7 +41,7 @@ class Settings:
     # USE_VV = 'Vv' in OUTPUTS
 
     # Training Parameters
-    N_EPOCHS = 200
+    N_EPOCHS = 100
     SEQ_LEN = 3 # AKA: Lookback
     FIRST_BATCH_SIZE = 20000 # 25000 # 200000
     SECOND_BATCH_SIZE = 5000 # 20000
@@ -52,8 +52,8 @@ class Settings:
     # Data Loading
     PLOTS_PATH = Path('plots')
     CHECKPOINTS_PATH = Path('checkpoints')
-    SCALER_PATH = os.path.join('output', f'scaler_{INPUTS}.pkl')
-    SCALER_CREATION_DIRS = ['/home/jperez/data/sled250']
+    SCALER_PATH = os.path.join('output', f'scalerv3_{INPUTS}.pkl')
+    SCALER_CREATION_DIRS = ['/home/jperez/data/sled250', '/home/jperez/data/sled300']
 
     PREV_CHECKPOINT = None # Path('checkpoints') / 'LSTM_torch_exp30_Adam-final-best.pth.tar' # Path('best') / 'model.pth.tar'
 
@@ -151,12 +151,13 @@ if __name__ == '__main__':
     # %% Data set-up
     batch_size = S.SECOND_BATCH_SIZE if S.USE_PINNS else S.FIRST_BATCH_SIZE
 
+    # sled250 (1-742) | sled300 (1-742) | sled350 (1-742)
     train_dataset = data.SledDataGenerator('/home/jperez/data/sled250', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, 
-                                            start=1, end=742)
+                                            dropin=0.5, start=1, end=742)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=S.N_WORKERS, pin_memory=True)
 
     val_dataset = data.SledDataGenerator('/home/jperez/data/sled300', sequence_length=S.SEQ_LEN, inputs=S.INPUTS, outputs=S.OUTPUTS, scaler=scaler, 
-                                            start=1, end=742)
+                                            dropin=0, start=1, end=742)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=S.N_WORKERS, pin_memory=True)
     
     # %% Model set-up

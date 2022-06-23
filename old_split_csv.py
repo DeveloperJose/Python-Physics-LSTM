@@ -20,8 +20,8 @@ def get_num_lines(file_path):
     fp.close()
     return lines
 
-input_path = '/home/jperez/data/sled/250_part2.csv'
-output_dir = '/home/jperez/data/sled250/'
+input_path = '/home/jperez/data/sled/300.csv'
+output_dir = '/home/jperez/data/sled300/'
 columns_to_save = ['X [ m ]', 'Y [ m ]', 'Timestep', 'Pressure [ Pa ]', 'Velocity u [ m s^-1 ]', 'Velocity v [ m s^-1 ]', 'Water.Volume Fraction']
 
 # Overall dataset statistics

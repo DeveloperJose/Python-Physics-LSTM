@@ -15,7 +15,6 @@ COLUMNS_H = ['X', 'Y', 'T', 'P', 'Vu', 'Vv', 'W.VF']
 COLUMNS_RAW = ['X [ m ]', 'Y [ m ]', 'Timestep', 'Pressure [ Pa ]',
                'Velocity u [ m s^-1 ]', 'Velocity v [ m s^-1 ]', 'Water.Volume Fraction']
 
-
 def read_np(filename, inputs_str, outputs_str, scaler=None):
     arr = np.load(filename)
 
@@ -42,7 +41,7 @@ def read_np(filename, inputs_str, outputs_str, scaler=None):
 
 
 class SledDataGenerator(Dataset):
-    def __init__(self, data_dir, sequence_length, inputs, outputs, scaler, start, end, step = 1):
+    def __init__(self, data_dir, sequence_length, inputs, outputs, scaler, dropin, start, end, step = 1):
         print(f'Loading dataset {data_dir} from t={start} to t={end}')
 
         self.data_dir = Path(data_dir)
@@ -81,11 +80,20 @@ class SledDataGenerator(Dataset):
         self.x_data = torch.tensor(self.x_data).float()
         self.y_data = torch.tensor(self.y_data).float()
 
+        self.rng = np.random.default_rng(1738)
+
         # Generate a list of the valid timesteps
         self.n_timesteps = self.x_data.shape[0]
         # self.list_timesteps = np.arange(self.sequence_length, self.n_timesteps)
         self.list_timesteps = np.arange(self.n_timesteps)
         self.list_rows = np.arange(self.x_data.shape[1])
+
+        # Dropin
+        if dropin != 0:
+            print('Dropping input rows', dropin, 'from', len(self.list_rows), end=' ')
+            self.list_rows = self.rng.permutation(self.list_rows)[int(len(self.list_rows) * (1 - dropin)):]
+            print('to', len(self.list_rows))
+
         self.list_IDs = [(t, r) for t in self.list_timesteps for r in self.list_rows]
 
     def __len__(self):
