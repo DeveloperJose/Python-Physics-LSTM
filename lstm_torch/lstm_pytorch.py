@@ -160,7 +160,7 @@ if __name__ == '__main__':
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=S.N_WORKERS, pin_memory=True)
     
     # %% Model set-up
-    model = models.PINNS(S)
+    model = models.LSTM_PINNS(S)
     opt = optim.Adam(model.parameters(), lr=0.001)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(opt, patience=S.REDUCE_LR_PATIENCE)
     print(f'{model}')

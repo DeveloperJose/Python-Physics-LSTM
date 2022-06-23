@@ -16,6 +16,8 @@ COLUMNS_RAW = ['X [ m ]', 'Y [ m ]', 'Timestep', 'Pressure [ Pa ]',
                'Velocity u [ m s^-1 ]', 'Velocity v [ m s^-1 ]', 'Water.Volume Fraction']
 
 
+
+
 def read_np(filename, inputs_str, outputs_str, scaler=None):
     arr = np.load(filename)
 
@@ -127,3 +129,27 @@ class SledDataGenerator(Dataset):
     def __read_np__(self, timestep):
         filename = os.path.join(self.data_dir, f'{timestep}.npy')
         return read_np(filename, self.inputs, self.outputs, self.scaler)
+
+class Sled2DDataGenerator(Dataset):
+    def __init__(self, data_dir, transform, start, end, step=1):
+        print(f'Loading dataset {data_dir}')
+
+        self.data_dir = Path(data_dir)
+        self.transform = transform
+        self.start = start
+        self.end = end
+        self.step = step
+
+        # Generate a list of the valid timesteps
+        self.list_timesteps = np.arange(start, end, step)
+
+    def __len__(self):
+        return len(self.list_timesteps)
+    
+    def __getitem__(self, index):
+        filename = os.path.join(self.data_dir, f'{index}.npy')
+        im_in = read_np_2d(filename)
+
+        next_filename = os.path.join(self.data_dir, f'{index+1}.npy')
+        im_out = read_np_2d(next_filename)
+        return self.transform(im_in), self.transform(im_out)

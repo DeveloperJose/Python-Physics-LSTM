@@ -20,8 +20,8 @@ def get_num_lines(file_path):
     fp.close()
     return lines
 
-input_path = '/home/jperez/data/sled/350.csv'
-output_dir = '/home/jperez/data/sled350/'
+input_path = '/home/jperez/data/sled/300.csv'
+output_dir = '/home/jperez/data/sled300/'
 columns_to_save = data.COLUMNS_RAW
 
 # Overall dataset statistics

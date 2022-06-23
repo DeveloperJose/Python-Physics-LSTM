@@ -12,9 +12,9 @@ def fused_pde(u, u_x, u_y, u_t, u_xx, u_yy, v, v_x, v_y, v_t, v_xx, v_yy, p_x, p
     f_v = v_t + lambda1*(u*v_x + v*v_y) + p_y - lambda2*(v_xx + v_yy)
     return f_u, f_v
 
-class PINNS(nn.Module):
+class LSTM_PINNS(nn.Module):
     def __init__(self, S: Settings):
-        super(PINNS, self).__init__()
+        super(LSTM_PINNS, self).__init__()
         self.S = S
 
         # Other parameters
@@ -32,22 +32,6 @@ class PINNS(nn.Module):
         self.lstm_dense_layers.append(nn.Linear(S.LSTM_DENSE_ACTIVATIONS, S.N_LSTM_OUTPUT))
 
         self.lstm_fcout = nn.Linear(S.LSTM_TD_ACTIVATIONS, S.N_LSTM_OUTPUT)
-        # self.lstm_fcout = nn.Linear(S.SEQ_LEN*S.LSTM_TD_ACTIVATIONS*mult, S.N_LSTM_OUTPUT)
-
-        # if S.BIDIRECTIONAL_LSTM:
-        #     # self.lstm_td = TimeDistributed(nn.Linear(S.LSTM_ACTIVATIONS*2, S.LSTM_TD_ACTIVATIONS), batch_first=True)
-            
-
-
-        #     # self.lstm_fc1 = nn.Linear(S.LSTM_TD_ACTIVATIONS, S.LSTM_DENSE_ACTIVATIONS)
-        #     # self.lstm_fcout = nn.Linear(S.LSTM_TD_ACTIVATIONS, S.N_LSTM_OUTPUT)
-
-            
-
-        # else:
-        #     # self.lstm_td = TimeDistributed(nn.Linear(S.LSTM_ACTIVATIONS, S.LSTM_TD_ACTIVATIONS), batch_first=True)
-        #     # self.lstm_fc = nn.Linear(S.SEQ_LEN*S.LSTM_TD_ACTIVATIONS, S.N_LSTM_OUTPUT)
-        #     raise Exception('Bidirectional LSTM only')
 
         # PINNs Branch
         dense_activations = S.DENSE_ACTIVATIONS
@@ -118,39 +102,20 @@ class PINNS(nn.Module):
 
         if self.S.BIDIRECTIONAL_LSTM:
             output, (hn, cn) = self.lstm(input)
-            # output2, (hn2, cn2) = self.lstm2(output1)
-            # Cat experiment
             cat = torch.cat((hn[-2, :, :], hn[-1, :, :]), dim=1)
             td_output = self.lstm_td(cat).view(batch_size, -1)
-            # lstm_output = self.lstm_fcout(td_output)
 
             lstm_fc = td_output
             for layer in self.lstm_dense_layers[:-1]:
                 lstm_fc = self.dropout(torch.relu(layer(lstm_fc)))
             lstm_output = self.lstm_dense_layers[-1](lstm_fc)
-
-            # Non-Cat
-            # td_output = self.lstm_td(output).view(batch_size, -1)
-
-            # Rest
-            # lstm_fc1 = self.lstm_fc1(td_output)
-            # lstm_d1 = self.dropout(torch.relu(lstm_fc1))
-            # lstm_output = self.lstm_fcout(lstm_d1)
-            # lstm_output = self.lstm_fcout(td_output)
         else:
             output1, (hn1, cn1) = self.lstm1(input)
             output2, (hn2, cn2) = self.lstm2(output1)
-
             
             td_output = self.lstm_td(output2)
             td_output = td_output.view(batch_size, -1)
             lstm_output = self.lstm_fcout(td_output)
-            
-            # Use the hidden state of the last timestep OR use pooling (avg/max)
-            # td_output = self.td(hn).view(-1, self.num_layers*self.lookback)
-            # lstm_output = self.fc_lstm(output[:, -1, :])
-            # out = self.fc(torch.mean(hn, 0))
-            # out = self.fc(torch.max(hn)[0])
         return lstm_output
 
     def forward(self, input):
