@@ -4,28 +4,9 @@ import torch.nn as nn
 
 from physics_lstm.configuration import Configuration
 
-# import torch.nn.functional as F
-
 
 @torch.jit.script
-def fused_pde(
-    u,
-    u_x,
-    u_y,
-    u_t,
-    u_xx,
-    u_yy,
-    v,
-    v_x,
-    v_y,
-    v_t,
-    v_xx,
-    v_yy,
-    p_x,
-    p_y,
-    lambda1,
-    lambda2,
-):
+def fused_pde(u, u_x, u_y, u_t, u_xx, u_yy, v, v_x, v_y, v_t, v_xx, v_yy, p_x, p_y, lambda1, lambda2):
     f_u = u_t + lambda1 * (u * u_x + v * u_y) + p_x - lambda2 * (u_xx + u_yy)
     f_v = v_t + lambda1 * (u * v_x + v * v_y) + p_y - lambda2 * (v_xx + v_yy)
     return f_u, f_v
@@ -71,9 +52,8 @@ class LSTM_PINNS(nn.Module):
         # self.lambda1 = nn.Parameter(torch.tensor([1.0], requires_grad=True).cuda())
         self.lambda1 = torch.tensor(1.0, requires_grad=False, device="cuda")
         self.lambda2 = nn.Parameter(torch.tensor([1.0], requires_grad=True, device="cuda"))
-        self.lstm_w = torch.tensor(
-            0.5, requires_grad=False, device="cuda"
-        )  # nn.Parameter(torch.tensor([0.5], requires_grad=True, device='cuda'))
+        self.lstm_w = torch.tensor(0.5, requires_grad=False, device="cuda")
+        # nn.Parameter(torch.tensor([0.5], requires_grad=True, device='cuda'))
 
     def losses(self, input, y_true):
         l_losses = []
@@ -196,24 +176,7 @@ class LSTM_PINNS(nn.Module):
         v_yy = v_y_grads[:, -1, 1]
 
         # %% PDEs
-        f_u, f_v = fused_pde(
-            u,
-            u_x,
-            u_y,
-            u_t,
-            u_xx,
-            u_yy,
-            v,
-            v_x,
-            v_y,
-            v_t,
-            v_xx,
-            v_yy,
-            p_x,
-            p_y,
-            lambda1,
-            lambda2,
-        )
+        f_u, f_v = fused_pde(u, u_x, u_y, u_t, u_xx, u_yy, v, v_x, v_y, v_t, v_xx, v_yy, p_x, p_y, lambda1, lambda2)
         return u, v, f_u, f_v
 
 

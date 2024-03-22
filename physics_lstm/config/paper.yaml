@@ -1,15 +1,17 @@
-experiment_name: "2022_Paper_Results_LSTM_CONVERGENCE"
+experiment_name: "2022_Paper_Results_LSTM_Convergence"
 inputs: ["X", "Y", "T", "Vu", "Vv", "P", "W.VF"]
 outputs: ["Vu", "Vv"]
 n_lstm_output: 2 # [vu, vv]
 n_dense_output: 2 # [psi, p]
 use_twilio: False
+use_baseline: False
 
 # training parameters
 n_epochs: 10_000
 seq_len: 3 # aka: lookback
-first_batch_size: 20000 # 25000 # 200000
-second_batch_size: 5000 # 20000
+batch_size: 20_000
+# first_batch_size: 20000 # 25000 # 200000
+# second_batch_size: 5000 # 20000
 n_workers: 6
 early_stop_patience: 50 # 50
 reduce_lr_patience: 25 # 25

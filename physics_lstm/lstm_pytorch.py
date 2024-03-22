@@ -1,22 +1,12 @@
-# import itertools
-# import os
-# import pdb
 import logging
 from pathlib import Path
 from timeit import default_timer as timer
 
-# import joblib
 import matplotlib.pyplot as plt
 import numpy as np
-
-# import pandas as pd
 import torch
-
-# import torch.nn as nn
 import torch.optim as optim
-
-# from sklearn.metrics import mean_squared_error
-# from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.metrics import mean_squared_error
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from twilio.rest import Client
@@ -27,10 +17,8 @@ import physics_lstm.models as models
 import physics_lstm.scaling as scaling
 from physics_lstm.configuration import Configuration
 
-# from typing import Union
-
-
 np.set_printoptions(suppress=True, linewidth=np.inf)  # No more scientific notation
+logger = logging.getLogger("physics_lstm")
 
 
 def save_model(filename, model, opt, val_loss, epoch, settings):
@@ -98,12 +86,17 @@ def plot_history(train_history, val_history, plot_filename):
     plt.savefig(plot_filename)
 
 
-if __name__ == "__main__":
+def main():
+    # %% Config set-up
     config = Configuration.load_from_yaml(Path("config/paper.yaml"))
 
-    logger = logging.getLogger("physics_lstm")
+    # %% Logger set-up
     logger_filepath = Path("output") / f"exp_{config.experiment_name}.log"
+    # if logger_filepath.exists():
+    #     raise Exception("Experiment with the same name already has existing log file")
     logging.basicConfig(level=logging.INFO, filename=logger_filepath)
+    logging.info("Configuration")
+    logging.info(config)
 
     # %% Twilio set-up
     if config.use_twilio:
@@ -113,7 +106,8 @@ if __name__ == "__main__":
     scaler = scaling.load_or_create(config.scaler_path, config.scaler_creation_dirs, config.inputs, config.outputs)
 
     # %% Data set-up
-    batch_size = config.second_batch_size if config.use_pinns else config.first_batch_size
+    # batch_size = config.second_batch_size if config.use_pinns else config.first_batch_size
+    batch_size = config.batch_size
 
     # sled250 (1-742) | sled300 (1-742) | sled350 (1-742)
     train_dataset = data.SledDataGenerator(
@@ -127,11 +121,7 @@ if __name__ == "__main__":
         end=config.train_end_timestep,
     )
     train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=config.n_workers,
-        pin_memory=True,
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=config.n_workers, pin_memory=True
     )
 
     val_dataset = data.SledDataGenerator(
@@ -145,12 +135,32 @@ if __name__ == "__main__":
         end=config.val_end_timestep,
     )
     val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=config.n_workers,
-        pin_memory=True,
+        val_dataset, batch_size=batch_size, shuffle=True, num_workers=config.n_workers, pin_memory=True
     )
+
+    # %% Baseline
+    if config.use_baseline:
+        logger.info("Running baseline")
+        y_true = []
+        y_pred = []
+
+        start_time = timer()
+        for timestep in range(1, val_dataset.x_data.shape[0] - config.seq_len):
+            # Get the whole lookup slice
+            prev_data = val_dataset.x_data[timestep : timestep + config.seq_len]
+            # Only use the last (u,v) for the no_change baseline
+            prev_uv = prev_data[-1, :, [3, 4]]
+            y_pred.extend(np.array(prev_uv))
+
+            # Get the next timestep after the lookup
+            next_data = val_dataset.x_data[timestep + config.seq_len]
+            next_uv = next_data[:, [3, 4]]
+            y_true.extend(np.array(next_uv))
+
+        duration = timer() - start_time
+        baseline_mse = mean_squared_error(y_true, y_pred, multioutput="raw_values")
+        logger.info(f"MSE={baseline_mse}, took {duration:.3f}sec")
+        return
 
     # %% Model set-up
     model = models.LSTM_PINNS(config)
@@ -242,3 +252,7 @@ if __name__ == "__main__":
             from_=keys.src_phone,
             to=keys.dst_phone,
         )
+
+
+if __name__ == "__main__":
+    main()

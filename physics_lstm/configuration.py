@@ -13,12 +13,14 @@ class Configuration:
     n_lstm_output: int
     n_dense_output: int
     use_twilio: bool
+    use_baseline: bool
 
     # training parameters
     n_epochs: int
     seq_len: int
-    first_batch_size: int
-    second_batch_size: int
+    batch_size: int
+    # first_batch_size: int
+    # second_batch_size: int
     n_workers: int
     early_stop_patience: int
     reduce_lr_patience: int
