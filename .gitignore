@@ -153,3 +153,4 @@ experiments.txt
 # Results
 *.avi
 *.png
+**/output/**

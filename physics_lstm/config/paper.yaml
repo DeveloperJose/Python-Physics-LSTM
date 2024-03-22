@@ -1,0 +1,47 @@
+experiment_name: "2022_Paper_Results_LSTM_CONVERGENCE"
+inputs: ["X", "Y", "T", "Vu", "Vv", "P", "W.VF"]
+outputs: ["Vu", "Vv"]
+n_lstm_output: 2 # [vu, vv]
+n_dense_output: 2 # [psi, p]
+use_twilio: False
+
+# training parameters
+n_epochs: 10_000
+seq_len: 3 # aka: lookback
+first_batch_size: 20000 # 25000 # 200000
+second_batch_size: 5000 # 20000
+n_workers: 6
+early_stop_patience: 50 # 50
+reduce_lr_patience: 25 # 25
+prev_checkpoint: None # path("checkpoints") / "lstm_torch_exp30_adam-final-best.pth.tar" # path("best") / "model.pth.tar"
+
+# training data
+train_data_path: "/data/jperez/datasets/sled250"
+train_dropin: 0.0
+train_start_timestep: 1
+train_end_timestep: 742
+
+val_data_path: "/data/jperez/datasets/sled300"
+val_dropin: 0.0
+val_start_timestep: 1
+val_end_timestep: 742
+
+# outputs
+plots_path: "output/plots/"
+checkpoints_path: "output/checkpoints/"
+scaler_path: "output/scalerv3.pkl"
+scaler_creation_dirs: ["/data/jperez/datasets/sled250", "/data/jperez/datasets/sled300"]
+
+# network architecture
+use_lstm: True
+use_pinns: False
+
+bidirectional_lstm: True
+n_lstm_layers: 2
+lstm_activations: 32
+lstm_td_activations: 32
+lstm_n_dense_layers: 1
+lstm_dense_activations: 32
+
+n_dense_layers: 1
+dense_activations: 32

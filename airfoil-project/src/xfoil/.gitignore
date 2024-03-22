@@ -1,6 +1,0 @@
-build/
-dist/
-*.egg-info/
-venv/
-.idea/
-cmake-build-debug/

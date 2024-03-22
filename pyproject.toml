@@ -1,0 +1,37 @@
+[tool.poetry]
+name = "physics_lstm"
+version = "0.1.0"
+description = ""
+authors = ["Jose G. Perez"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+tqdm = "^4.66.2"
+torch = "^2.2.1"
+pyyaml = "^6.0.1"
+numpy = "^1.26.4"
+matplotlib = "^3.8.3"
+pandas = "^2.2.1"
+scikit-learn = "^1.4.1.post1"
+twilio = "^9.0.2"
+
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu121"
+priority = 'supplemental'
+
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.3.0"
+isort = "^5.13.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+profile = "black"
+
+[tool.black]
+line-length = 120
