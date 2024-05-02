@@ -14,6 +14,8 @@ class Configuration:
     n_dense_output: int
     use_twilio: bool
     use_baseline: bool
+    use_lstm: bool
+    use_pinns: bool
 
     # training parameters
     n_epochs: int
@@ -44,9 +46,6 @@ class Configuration:
     scaler_creation_dirs: List[Path]
 
     # network architecture
-    use_lstm: bool
-    use_pinns: bool
-
     bidirectional_lstm: bool
     n_lstm_layers: int
     lstm_activations: int

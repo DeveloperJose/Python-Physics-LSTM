@@ -1,4 +1,5 @@
 import logging
+from pprint import pformat
 from pathlib import Path
 from timeit import default_timer as timer
 
@@ -44,6 +45,14 @@ def setup_cuda(model):
 
 
 def step(model, opt, device, data_loader, is_training=True):
+    """Perform a single step of training or validation.
+    Args:
+        model: The model to train or validate
+        opt: The optimizer to use
+        device: The device to use
+        data_loader: The data loader to use
+        is_training: Whether to train or validate
+    """
     if is_training:
         desc = "Training"
         loss_name = "train_loss"
@@ -53,6 +62,7 @@ def step(model, opt, device, data_loader, is_training=True):
 
     step_loss = 0
     separate_losses = []
+
     with tqdm(total=len(data_loader), desc=desc) as p_bar:
         for step, (batch_x, batch_y) in enumerate(data_loader):
             batch_x, batch_y = batch_x.to(device), batch_y.to(device)
@@ -85,7 +95,6 @@ def plot_history(train_history, val_history, plot_filename):
     ax.legend(loc="upper right")
     plt.savefig(plot_filename)
 
-
 def main():
     # %% Config set-up
     config = Configuration.load_from_yaml(Path("config/paper.yaml"))
@@ -96,7 +105,7 @@ def main():
     #     raise Exception("Experiment with the same name already has existing log file")
     logging.basicConfig(level=logging.INFO, filename=logger_filepath)
     logging.info("Configuration")
-    logging.info(config)
+    logging.info(pformat(config))
 
     # %% Twilio set-up
     if config.use_twilio:

@@ -10,6 +10,7 @@ The raw CSV files (21GBs) and the split .npy files for the training (562MBs) and
 1. Install pyenv and use it to install Python 3.10, ```pyenv install 3.10```
 2. Install poetry
 3. Run ```poetry install```
+  - If poetry install seems stuck you might have to run ```export PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring``` in your shell due to a bug (https://github.com/python-poetry/poetry/issues/8623)
 4. To verify your torch installation is using CUDA, run ```poetry run python dev_test_installation.py```
 
 # Running
